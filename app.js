@@ -18,6 +18,21 @@ const makeBag=()=>Object.entries(DISTRIBUTION).flatMap(([l,n])=>Array(n).fill(l)
 const boardStyle=document.createElement('style');
 boardStyle.textContent=`#board{display:grid!important;grid-template-columns:repeat(15,minmax(0,1fr))!important;width:100%!important;max-width:690px;margin:12px auto;gap:2px;aspect-ratio:1/1;visibility:visible!important}#board .sq{display:flex!important;align-items:center;justify-content:center;min-width:0!important;min-height:0!important;padding:0!important;border:1px solid #506b5a;border-radius:2px;font-size:clamp(8px,1.6vw,15px);font-weight:700;color:#243328;background:#c5d6bb;aspect-ratio:1/1}#board .sq.tw{background:#ef9a91}#board .sq.dw{background:#f3c3c0}#board .sq.tl{background:#7eb8d7}#board .sq.dl{background:#c3e3ed}#board .sq.placed{background:#ecd3a0;color:#382b1e}#board .sq.selected{outline:2px solid #e8b643;outline-offset:-2px}#board .sq:disabled{opacity:1!important}#tileRack{width:100%;max-width:690px;margin:12px auto!important}#play{min-width:0}`;
 document.head.append(boardStyle);
+// Firebase Realtime Database omits empty objects/arrays when serializing a snapshot.
+// Normalize every snapshot BEFORE attempting to draw the board or calculate a move.
+function normalizeGame(g){
+ if(!g)return g;
+ if(!g.tiles || typeof g.tiles!=='object')g.tiles={};
+ if(!g.racks || typeof g.racks!=='object')g.racks={};
+ if(!Array.isArray(g.racks[0]))g.racks[0]=[];
+ if(!Array.isArray(g.racks[1]))g.racks[1]=[];
+ if(!Array.isArray(g.draws))g.draws=[[],[],[]];
+ for(let i=0;i<3;i++)if(!Array.isArray(g.draws[i]))g.draws[i]=[];
+ if(!Array.isArray(g.moves))g.moves=[];
+ if(!Array.isArray(g.scores))g.scores=[0,0];
+ if(!g.ready)g.ready={};
+ return g;
+}
 const rackFor=s=>game?.racks?.[s]||[];
 let pending={},chosenTile=null;
 function evaluate(g=game){
@@ -66,11 +81,11 @@ function render(){let active=!!game,playing=game?.status==='playing',myturn=canA
  let rack=$('tileRack');if(!rack){rack=document.createElement('div');rack.id='tileRack';rack.style.cssText='display:flex;gap:5px;justify-content:center;flex-wrap:wrap;margin:14px 0';$('board').insertAdjacentElement('afterend',rack)}rack.innerHTML='';if(playing&&game.phase==='play'){rackFor(seat).forEach((letter,i)=>{let b=document.createElement('button');b.textContent=letter==='?'?'BLANK':`${letter} ${V[letter]||0}`;b.disabled=!myturn||Object.values(pending).some(t=>t.rackIndex===i);b.style.cssText=`min-width:40px;min-height:48px;border:2px solid ${chosenTile===i?'#d1a345':'#88724d'};border-radius:7px;background:#e8d2a2;color:#302315;font-weight:bold`;b.onclick=()=>{chosenTile=i;render()};rack.append(b)})}
  for(const id of ['submit','skip','undo','next','undoChallenge'])$(id).disabled=!myturn||((id==='next'||id==='undoChallenge')?game.phase!=='challenge':game.phase!=='play');
  for(const id of ['word','blanks','dir']){let el=$(id);if(el)el.closest('label,div')?.classList.add('hidden')}
- $('card').textContent=game.challenge?.text||'';$('challengeTitle').textContent=`Player ${player()+1} challenge`;$('spectator').classList.toggle('hidden',myturn||!playing);$('spectator').textContent=`Waiting for Player ${player()+1}. Board updates automatically.`;
+ $('card').textContent=game.challenge?.text||'';$('challengeTitle').textContent=`Player ${player()+1} challenge`;$('spectator').classList.toggle('hidden',myturn||!playing);$('spectator').textContent=`Waiting for Player ${player()+1} to finish their turn. Board updates automatically.`;
  if(game.phase==='finished'){$('winner').textContent=game.scores[0]===game.scores[1]?'It’s a tie!':(game.scores[0]>game.scores[1]?'Player 1 wins!':'Player 2 wins!')+` Final score ${game.scores[0]}–${game.scores[1]}.`;$('revealStatus').textContent=game.reveals?.[0]&&game.reveals?.[1]?'Both secret words revealed.':'Both players must reveal their secret words.';$('revealBtn').disabled=!!game.reveals?.[seat];if(game.reveals?.[0]&&game.reveals?.[1]){$('reveals').textContent=`Secret words: ${game.reveals[0]} / ${game.reveals[1]}`}}
  preview();}
-async function mutate(fn){if(!code||!isOwner())return;try{const result=await runTransaction(gameRef(code),g=>{if(!g||g.status==='ended'||g.players?.[seat]!==uid)return;const out=fn(g);if(out){out.version=(g.version||0)+1;return out}}, {applyLocally:false});if(!result.committed)say('That action could not be completed. The other iPad may have updated the game.')}catch(e){say('Could not save: '+e.message)}}
-function subscribe(c,s){code=c;seat=s;sessionStorage.setItem('afterdark-seat',String(s));if(unsub)unsub();unsub=onValue(gameRef(c),snap=>{let old=game,latest=snap.val();if(!latest){game=null;leave();say('This game is no longer available.');return}if(old&&(old.turn!==latest.turn||old.phase!==latest.phase)){pending={};chosenTile=null;resetFields();}game=latest;render()},err=>say('Database connection: '+err.message));$('joinCode').value='';say('Connected to game '+c+' · digital board v3.1')}
+async function mutate(fn){if(!code||!isOwner())return;try{const result=await runTransaction(gameRef(code),g=>{if(!g||g.status==='ended'||g.players?.[seat]!==uid)return;g=normalizeGame(g);const out=fn(g);if(out){out.version=(g.version||0)+1;return out}}, {applyLocally:false});if(!result.committed)say('That action could not be completed. The other iPad may have updated the game.')}catch(e){say('Could not save: '+e.message)}}
+function subscribe(c,s){code=c;seat=s;sessionStorage.setItem('afterdark-seat',String(s));if(unsub)unsub();unsub=onValue(gameRef(c),snap=>{let old=game,latest=snap.val();if(!latest){game=null;leave();say('This game is no longer available.');return}if(old&&(old.turn!==latest.turn||old.phase!==latest.phase)){pending={};chosenTile=null;resetFields();}game=normalizeGame(latest);try{render()}catch(e){console.error("Board render failed",e);say("Game display error: "+e.message)}},err=>say('Database connection: '+err.message));$('joinCode').value='';say('Connected to game '+c+' · digital board v3.2')}
 function leave(){if(unsub){unsub();unsub=null}code=null;seat=-1;game=null;pending={};chosenTile=null;resetFields();render()}
 $('create').onclick=async()=>{if(!uid)return say('Connecting to Firebase…');try{for(let i=0;i<12;i++){let c=String(100000+Math.floor(Math.random()*900000)),g=initial();g.players={0:uid};const result=await runTransaction(gameRef(c),old=>old===null?g:undefined,{applyLocally:false});if(result.committed){subscribe(c,0);return}}say('Unable to allocate a game code. Try again.')}catch(e){say(e.message)}};
 $('join').onclick=async()=>{
