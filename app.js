@@ -1,7 +1,7 @@
 import {initializeApp} from 'https://www.gstatic.com/firebasejs/11.10.0/firebase-app.js';
 import {getAuth,signInAnonymously,onAuthStateChanged} from 'https://www.gstatic.com/firebasejs/11.10.0/firebase-auth.js';
 import {getDatabase,ref,get,set,onValue,runTransaction,remove} from 'https://www.gstatic.com/firebasejs/11.10.0/firebase-database.js';
-const config={apiKey:'AIzaSyDg3iRwJGlHix-PMmNo_Ag0KKi5ULOnHv0',authDomain:'scrabble-after-dark.firebaseapp.com',databaseURL:'https://scrabble-after-dark-default-rtdb.firebaseio.com',projectId:'scrabble-after-dark',storageBucket:'scrabble-after-dark.firebasestorage.app',messagingSenderId:'503923310198',appId:'1:503923310198:web:f9de0ea2bf6a6d8220a957'};
+const config={apiKey:'AIzaSyDq3iRwJGlHjx-PMmNo_Aq0KKi5ULQnHv0',authDomain:'scrabble-after-dark.firebaseapp.com',databaseURL:'https://scrabble-after-dark-default-rtdb.firebaseio.com',projectId:'scrabble-after-dark',storageBucket:'scrabble-after-dark.firebasestorage.app',messagingSenderId:'503923310198',appId:'1:503923310198:web:f9de0ea2bf6a6d8220a957'};
 const fb=initializeApp(config),auth=getAuth(fb),db=getDatabase(fb);let uid=null,code=null,seat=-1,game=null,unsub=null,selected=null,editing=false;
 const $=id=>document.getElementById(id),say=(s)=>{$('message').textContent=s},gameRef=c=>ref(db,'games/'+c),seatName=s=>s===0?'You':'Wendy';
 const V={A:1,B:3,C:3,D:2,E:1,F:4,G:2,H:4,I:1,J:8,K:5,L:1,M:3,N:1,O:1,P:3,Q:10,R:1,S:1,T:1,U:1,V:4,W:4,X:8,Y:4,Z:10};
