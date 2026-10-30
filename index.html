@@ -1,4 +1,4 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#1c0c17"><title>After Dark Scrabble — Digital v3.3</title><style>
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#1c0c17"><title>After Dark Scrabble — Digital v3.5</title><style>
 :root{color-scheme:dark;font-family:system-ui,-apple-system,sans-serif;--wine:#1c0c17;--panel:#30202d;--panel-raised:#422638;--outline:#795262;--ink:#f7eade;--muted:#d9bfc8;--gold:#f2cf9b;--rose:#a53054;--rose-hover:#bd4668}
 *{box-sizing:border-box}body{margin:0;background:radial-gradient(ellipse at 45% 0,#4e1d35 0,#230d1b 44%,#150912 100%);background-attachment:fixed;color:var(--ink)}
 main{max-width:860px;margin:auto;padding:16px 12px 80px}h1{font-family:Georgia,serif;text-align:center;color:var(--gold);margin:10px 0;font-size:clamp(30px,5vw,42px)}h2{color:var(--gold);font-family:Georgia,serif}p{line-height:1.5}.hidden{display:none!important}
@@ -12,12 +12,74 @@ dialog{background:#2f1c2b;color:white;border:1px solid #c4a56c;border-radius:12p
 .primary{background:var(--rose);border-color:#ce6482}#create,#submit,#next,#acceptChallenge{background:var(--rose);border-color:#ce6482}#declineChallenge{background:#5a394d;border-color:#a17b8d}
 #gameCode{font-size:28px;letter-spacing:4px;font-weight:800;color:var(--gold)}#card{font-size:1.18rem;background:#46283b;border-left:4px solid var(--gold);padding:18px;border-radius:8px;line-height:1.5}#challengeDecision{font-weight:700;color:var(--gold)}#challengeResponses{color:var(--muted);font-size:.92rem}
 @media(max-width:600px){.panel{padding:12px}#board{gap:1px!important}#board .sq{font-size:clamp(7px,2vw,11px)!important}#tileRack button{min-width:35px;min-height:43px}}
-</style></head><body><main><h1>After Dark Scrabble</h1><p style="text-align:center;font-size:12px;color:#f2cf9b;margin:-2px 0 15px">Digital Board · Build 3.3</p><p id="message" role="status">Connecting to Firebase…</p>
+
+/* Scoring legend: visible throughout play, challenges, and reveal. */
+.bonus-legend{background:linear-gradient(110deg,#432438,#2b1a2a);border:1px solid #b88a77;border-radius:13px;padding:13px 15px;margin:12px 0}
+.bonus-legend h3{font-family:Georgia,serif;font-size:1.12rem;color:var(--gold);margin:0 0 11px}
+.bonus-tiers{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px}
+.bonus-tier{padding:10px 8px;background:#291825;border:1px solid #7c5567;border-radius:9px;text-align:center}
+.bonus-tier strong{display:block;font-size:1.25rem;color:#ffcf89;line-height:1.1}
+.bonus-tier .tier-label{display:block;font-size:.85rem;font-weight:700;margin:6px 0;color:#ffe6d5}
+.bonus-tier small{display:block;font-size:.76rem;color:#dfbfcb;line-height:1.3}
+.bonus-legend details{margin-top:10px;font-size:.88rem;color:var(--muted)}
+.bonus-legend summary{cursor:pointer;color:var(--gold);padding:4px 0}
+.bonus-legend p{margin:6px 0;line-height:1.45}
+#bonusPreview{font-weight:700;color:#ffd695;margin:6px 0;min-height:0}
+#secretBonusDetails{color:#ffd695;font-weight:700}
+#bonusToast{position:fixed;top:32%;left:50%;transform:translate(-50%,-10%) scale(.7);width:min(88vw,420px);padding:25px 20px 27px;z-index:50;pointer-events:none;text-align:center;background:radial-gradient(circle at 50% 10%,#714259,#381829 65%,#210f1a);border:2px solid #ffd38c;border-radius:20px;box-shadow:0 0 0 5px #f4c37720,0 15px 60px #000a;opacity:0;visibility:hidden}
+#bonusToast.visible{visibility:visible;animation:bonusArrival 2.9s ease-out forwards}
+#bonusToast.suggestive{border-color:#ff91ae;box-shadow:0 0 0 5px #e94f7c30,0 15px 60px #000a}
+#bonusToast.secret{border-color:#ffe3a2;box-shadow:0 0 0 7px #f4c37733,0 15px 60px #000a}
+#bonusToast:before,#bonusToast:after{content:'✦';position:absolute;color:#ffd48c;font-size:35px;top:8px;left:15px;animation:bonusSpark 1.2s ease-in-out 2 alternate}
+#bonusToast:after{left:auto;right:16px;top:auto;bottom:5px;animation-delay:.2s}
+#bonusToastTier{font-size:.86rem;font-weight:800;letter-spacing:.12em;color:#f4d8bf}
+#bonusToastPoints{font-family:Georgia,serif;font-size:clamp(3.7rem,10vw,5.5rem);font-weight:bold;line-height:1.15;color:#ffe2a2;text-shadow:0 0 22px #eec67990}
+#bonusToastDescription{font-size:1rem;color:#f9e5df;font-weight:700}
+@keyframes bonusArrival{0%{opacity:0;transform:translate(-50%,10%) scale(.55)}12%,68%{opacity:1;transform:translate(-50%,0) scale(1.04)}26%,65%{transform:translate(-50%,0) scale(1)}100%{opacity:0;transform:translate(-50%,-22%) scale(.98)}}
+@keyframes bonusSpark{0%{opacity:.2;transform:scale(.55) rotate(0)}100%{opacity:1;transform:scale(1.25) rotate(35deg)}}
+@media(max-width:550px){.bonus-tier{padding:8px 4px}.bonus-tier strong{font-size:1.05rem}.bonus-tier .tier-label{font-size:.74rem}.bonus-tier small{font-size:.67rem}}
+@media(prefers-reduced-motion:reduce){#bonusToast.visible{animation:bonusFade 2.9s linear forwards}#bonusToast:before,#bonusToast:after{animation:none}@keyframes bonusFade{0%{opacity:0}5%,90%{opacity:1}100%{opacity:0}}}
+
+/* Shared timed-challenge overlay. Same countdown appears on both iPads. */
+#timerCurtain{position:fixed;inset:0;background:rgba(21,8,18,.92);backdrop-filter:blur(7px);z-index:80;display:flex;align-items:center;justify-content:center;padding:16px;overflow:auto}
+#timerCard{width:min(100%,490px);border-radius:22px;border:2px solid #d9ad76;background:linear-gradient(145deg,#51283b,#291322 68%);padding:28px 20px;text-align:center;box-shadow:0 25px 90px #0009}
+#timerCard h2{font-family:Georgia,serif;font-size:1.7rem;color:#f7d6a1;margin:0 0 8px}
+#timerChallenge{font-size:1.16rem;line-height:1.45;color:#fbe1e0;margin:15px 0}
+#timerDisplay{font-family:Georgia,serif;font-size:clamp(5rem,16vw,8rem);line-height:1.05;font-variant-numeric:tabular-nums;color:#ffd796;letter-spacing:.02em;text-shadow:0 0 28px #e3ac7080;margin:8px 0}
+#timerState{font-size:1.1rem;font-weight:750;color:#f8d7bc;margin:0 0 17px}
+.timer-buttons{display:flex;justify-content:center;gap:10px;flex-wrap:wrap;margin:12px 0}
+.timer-buttons button{min-width:128px}
+#timerSound{font-size:.82rem;color:#d9b9c0;margin:12px 0 0}
+#timerWaiting{font-weight:700;color:#eed4ad}
+#timerCurtain .timer-secondary{background:#654658;color:#fff0ed}
+@media(prefers-reduced-motion:reduce){#timerCurtain{backdrop-filter:none}}
+
+</style></head><body><main><h1>After Dark Scrabble</h1><p style="text-align:center;font-size:12px;color:#f2cf9b;margin:-2px 0 15px">Digital Board · Build 3.5</p><p id="message" role="status">Connecting to Firebase…</p>
 <section id="welcome" class="panel"><h2>Private game for two</h2><button id="create" class="primary">Create New Game</button><p class="muted">Or join using your partner's six-digit code.</p><div class="row"><input id="joinCode" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="6" placeholder="6-digit code" aria-label="Game code"><button id="join">Join / Rejoin Game</button></div></section>
 <section id="game" class="hidden"><div class="panel"><div class="row"><span>Game code</span><span id="gameCode"></span><span id="seatLabel"></span></div><div class="scores"><div id="score0">Player 1</div><div id="score1">Player 2</div></div><p><strong id="round"></strong> · <span id="status"></span></p><button id="leave">Leave / Switch Game</button></div>
+<section id="bonusLegend" class="bonus-legend" aria-label="After Dark scoring bonuses">
+<h3>After Dark · Bonus Scoring</h3>
+<div class="bonus-tiers"><div class="bonus-tier"><strong>+5</strong><span class="tier-label">Romantic</span><small>Love &amp; affection</small></div><div class="bonus-tier"><strong>+10</strong><span class="tier-label">Suggestive</span><small>Innuendo &amp; desire</small></div><div class="bonus-tier"><strong>+50</strong><span class="tier-label">Secret Match</span><small>Play your partner’s secret word</small></div></div>
+<p class="muted" style="font-size:.83rem;margin:10px 0 3px">The listed bonus applies once to the main word you play. Secret matches are revealed and scored at game end.</p>
+<details><summary>See all recognized bonus words</summary><p><strong>Romantic +5:</strong> <span id="romanticWords"></span></p><p><strong>Suggestive +10:</strong> <span id="suggestiveWords"></span></p></details>
+</section>
 <section id="lobby" class="panel"><h2>Secret word setup</h2><p id="lobbyInfo"></p><div id="secretInputArea"><label>Choose a secret word (4–8 letters)<input id="secret" type="text" maxlength="8" autocapitalize="characters" placeholder="Your private word"></label><button id="secretSave" class="primary">Save Secret Word</button></div></section>
-<section id="play" class="panel hidden"><h2>Play on the board</h2><p>Select a tile from your rack, then tap its destination square. Tap a newly placed tile to remove it. First word must cover the center.</p><div class="board-wrap"><div id="board" aria-label="15 by 15 Scrabble board"></div></div><div id="tileRack" aria-label="Your letter rack"></div><div id="spectator" class="muted"></div><p id="validation"></p><p id="summary"></p><div class="row"><button id="submit" class="primary">Play Word</button><button id="skip">Pass Turn</button><button id="undo">Undo Last Move</button></div><div class="hidden"><label>Word<input id="word"></label><label>Blanks<input id="blanks"></label><label>Direction<select id="dir"><option value="h">Across</option><option value="v">Down</option></select></label><label><input type="radio" name="bonus" value="0" checked>Bonus</label></div></section>
+<section id="play" class="panel hidden"><h2>Play on the board</h2><p>Select a tile from your rack, then tap its destination square. Tap a newly placed tile to remove it. First word must cover the center.</p><div class="board-wrap"><div id="board" aria-label="15 by 15 Scrabble board"></div></div><div id="tileRack" aria-label="Your letter rack"></div><div id="spectator" class="muted"></div><p id="validation"></p><p id="summary"></p><p id="bonusPreview" aria-live="polite"></p><div class="row"><button id="submit" class="primary">Play Word</button><button id="skip">Pass Turn</button><button id="undo">Undo Last Move</button></div><div class="hidden"><label>Word<input id="word"></label><label>Blanks<input id="blanks"></label><label>Direction<select id="dir"><option value="h">Across</option><option value="v">Down</option></select></label><label><input type="radio" name="bonus" value="0" checked>Bonus</label></div></section>
 <section id="challenge" class="panel hidden"><h2 id="challengeTitle">After Dark Challenge</h2><p id="card"></p><p id="challengeGuidance"></p><p id="challengeResponses"></p><div id="challengeChoices" class="row"><button id="acceptChallenge" class="primary">Accept Challenge</button><button id="declineChallenge">Decline Challenge</button></div><p id="challengeDecision" aria-live="polite"></p><div class="row"><button id="next" class="primary">Continue to Next Turn</button><button id="undoChallenge">Undo Move</button></div></section>
-<section id="finished" class="panel hidden"><h2>Game complete</h2><p id="winner"></p><p id="revealStatus"></p><button id="revealBtn">Reveal My Secret Word</button><p id="reveals"></p></section><section id="ended" class="panel hidden"><h2>Game ended</h2></section><button id="end">End Game for Both Players</button></section>
-<div class="panel"><button id="rulesBtn">How to Play</button></div><dialog id="rules"><h2>Rules</h2><p>Standard 15×15 board, seven tiles per player, classic tile values and premium squares. Take turns placing a continuous word that connects to the existing board. First word crosses the center. Valid words and all crosswords are checked against the included English word list. After each successful move, both players see the After Dark challenge. Each player may accept or decline. Either decline skips the challenge without penalty; if both accept, it is mutual. The person who played the word continues to the next turn once the decision is settled.</p><p>Three rounds of eight total turns each: 24 total turns, 12 per player. After Dark word bonuses and private secret-word rewards apply. Consent always comes first; any challenge may be skipped.</p><button id="closeRules">Close</button></dialog>
-</main><script type="module" src="./app.js?v=20261030-digital-v33-mutual"></script></body></html>
+<section id="finished" class="panel hidden"><h2>Game complete</h2><p id="winner"></p><p id="revealStatus"></p><button id="revealBtn">Reveal My Secret Word</button><p id="reveals"></p><p id="secretBonusDetails"></p></section><section id="ended" class="panel hidden"><h2>Game ended</h2></section><button id="end">End Game for Both Players</button></section>
+<div class="panel"><button id="rulesBtn">How to Play</button></div><dialog id="rules"><h2>Rules</h2><p>Standard 15×15 board, seven tiles per player, classic tile values and premium squares. Take turns placing a continuous word that connects to the existing board. First word crosses the center. Valid words and all crosswords are checked against the included English word list. After each successful move, both players see the After Dark challenge. Each player may accept or decline. Either decline skips the challenge without penalty; if both accept, it is mutual. Timed challenges open a shared countdown after both accept; either player starts it and both devices hear a chime if sound is enabled. The person who played the word continues after the timer finishes or is skipped.</p><p>Three rounds of eight total turns each: 24 total turns, 12 per player. Romantic words earn +5, suggestive words earn +10, and matching your partner’s private secret word earns +50 at the final reveal. The eligible-word list is available below the scores. Bonuses apply to the main word played, not crosswords. Consent always comes first; any challenge may be skipped.</p><button id="closeRules">Close</button></dialog>
+<section id="timerCurtain" class="hidden" role="dialog" aria-modal="true" aria-labelledby="timerHeading">
+  <div id="timerCard">
+    <h2 id="timerHeading">Timed After Dark Challenge</h2>
+    <p id="timerChallenge"></p>
+    <div id="timerDisplay" aria-live="off">0:30</div>
+    <p id="timerState" role="status">Ready when you both are</p>
+    <div class="timer-buttons"><button id="timerStart" class="primary">Start Timer Together</button><button id="timerSkip" class="timer-secondary">Skip Timer</button><button id="timerAdvance" class="primary hidden">Continue to Next Turn</button></div>
+    <p id="timerWaiting" class="hidden"></p>
+    <div class="timer-buttons"><button id="enableTimerSound" class="timer-secondary">Enable Chime</button></div>
+    <p id="timerSound">Sound is enabled when you accept the challenge on your iPad.</p>
+    <p class="muted" style="font-size:.8rem;margin-top:14px">Keep the game open to hear the chime. Either player can start or skip the shared timer.</p>
+  </div>
+</section>
+<div id="bonusToast" role="status" aria-live="polite" aria-atomic="true"><div id="bonusToastTier"></div><div id="bonusToastPoints"></div><div id="bonusToastDescription"></div></div>
+</main><script type="module" src="./app.js?v=20261030-digital-v35-timers"></script></body></html>
