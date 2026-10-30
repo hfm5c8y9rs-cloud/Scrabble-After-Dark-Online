@@ -1,0 +1,19 @@
+{
+  "rules": {
+    "games": {
+      "$code": {
+        ".read": "auth != null",
+        ".write": "auth != null && $code.matches(/^[0-9]{6}$/) && ((!data.exists() && newData.child('players/0').val() === auth.uid && !newData.child('players/1').exists() && newData.child('status').val() === 'lobby') || (data.child('status').val() === 'lobby' && !data.child('players/1').exists() && newData.child('players/1').val() === auth.uid && newData.child('players/0').val() === data.child('players/0').val()) || (data.child('players/0').val() === auth.uid || data.child('players/1').val() === auth.uid))",
+        ".validate": "newData.hasChildren(['players','scores','tiles','turn','status','starting','phase'])"
+      }
+    },
+    "secrets": {
+      "$code": {
+        "$seat": {
+          ".read": "auth != null && root.child('games').child($code).child('players').child($seat).val() === auth.uid",
+          ".write": "auth != null && root.child('games').child($code).child('players').child($seat).val() === auth.uid && !data.exists() && newData.child('uid').val() === auth.uid && newData.child('word').isString() && newData.child('word').val().matches(/^[A-Z]{4,8}$/)"
+        }
+      }
+    }
+  }
+}
