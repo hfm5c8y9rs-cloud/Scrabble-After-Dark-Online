@@ -9,7 +9,7 @@ const V={A:1,B:3,C:3,D:2,E:1,F:4,G:2,H:4,I:1,J:8,K:5,L:1,M:3,N:1,O:1,P:3,Q:10,R:
 const TW=['0,0','0,7','0,14','7,0','7,14','14,0','14,7','14,14'],DW=['1,1','2,2','3,3','4,4','7,7','10,10','11,11','12,12','13,13','1,13','2,12','3,11','4,10','10,4','11,3','12,2','13,1'],TL=['1,5','1,9','5,1','5,5','5,9','5,13','9,1','9,5','9,9','9,13','13,5','13,9'],DL=['0,3','0,11','2,6','2,8','3,0','3,7','3,14','6,2','6,6','6,8','6,12','7,3','7,11','8,2','8,6','8,8','8,12','11,0','11,7','11,14','12,6','12,8','14,3','14,11'];
 const deck=[['Give your partner a slow 30-second kiss.','Name three things you find irresistible about your partner.','Whisper a compliment in your partner’s ear.','Describe your favorite romantic memory together.','Ask your partner where they would like a gentle kiss.','Tell your partner when you last found them especially attractive.','Hold each other close for one minute.','Describe your ideal date night.'],['Give your partner a two-minute shoulder massage.','Share a private romantic fantasy you are comfortable discussing.','Ask what kind of affectionate touch your partner enjoys most.','Choose a song for a slow dance.','Describe an outfit you find particularly attractive.','Kiss for one minute without speaking.','Describe a romantic surprise you would enjoy.','Tell your partner something new you would like to explore together.'],['Ask one intimate question; answering is optional.','Describe an ideal private evening together.','Share a desire you have not talked about much.','Let your partner choose a comfortable way to be held or kissed.','Take two minutes to focus entirely on your partner.','Suggest a new mutually welcome romantic experience.','Each share something you would like more of in your time together.','Choose a mutually agreed romantic reward for after the game.']];
 const k=(r,c)=>r+','+c,prem=(r,c)=>{let q=k(r,c);return TW.includes(q)?'tw':DW.includes(q)?'dw':TL.includes(q)?'tl':DL.includes(q)?'dl':''},clone=x=>JSON.parse(JSON.stringify(x));
-const initial=()=>({status:'lobby',players:{},names:{},ready:{},secrets:{},scores:[0,0],tiles:{},turn:0,starting:Math.random()<.5?0:1,phase:'play',draws:[[],[],[]],bag:makeBag(),racks:{0:[],1:[]},moves:[],challenge:null,ended:false,version:0});
+const initial=()=>({status:'lobby',players:{},names:{},ready:{},secrets:{},scores:[0,0],tiles:{},turn:0,starting:Math.random()<.5?0:1,phase:'play',draws:[[],[],[]],bag:makeBag(),racks:{0:[],1:[]},moves:[],challenge:null,ended:false,turnStartedAt:null,thinkMs:[0,0],lastTurnMs:0,version:0});
 const player=()=>game?(game.starting+game.turn)%2:0,round=()=>Math.min(2,Math.floor((game?.turn||0)/8)),canAct=()=>game?.status==='playing'&&seat===player(),isOwner=()=>seat>=0&&game?.players?.[seat]===uid;
 // Both players must explicitly opt in; one decline skips the challenge.
 const choiceStatus=challenge=>{if(!challenge)return 'pending';const r=challenge.responses||{};if(r[0]==='declined'||r[1]==='declined')return 'declined';return r[0]==='accepted'&&r[1]==='accepted'?'accepted':'pending'};
@@ -33,6 +33,9 @@ function normalizeGame(g){
  if(!Array.isArray(g.moves))g.moves=[];
  if(!Array.isArray(g.scores))g.scores=[0,0];
  if(!g.ready)g.ready={};
+ if(!Array.isArray(g.thinkMs))g.thinkMs=[0,0];
+ if(!Number.isFinite(g.thinkMs[0]))g.thinkMs[0]=0;
+ if(!Number.isFinite(g.thinkMs[1]))g.thinkMs[1]=0;
  return g;
 }
 const rackFor=s=>game?.racks?.[s]||[];
@@ -111,6 +114,48 @@ const TIMED_CHALLENGES=new Map([
 const challengeSeconds=ch=>ch?Number(ch.durationSeconds)||TIMED_CHALLENGES.get(ch.text)||0:0;
 let serverTimeOffset=0,soundCtx=null,soundEnabled=false,observedTimerKey=null,chimedTimerKey=null;
 const serverNow=()=>Date.now()+serverTimeOffset;
+// Every client uses the Firebase-adjusted clock and a shared turn start timestamp.
+// Challenge time is excluded from word-playing time; clocks never deduct points.
+function formatElapsed(ms){
+ const seconds=Math.max(0,Math.floor((Number(ms)||0)/1000));
+ const h=Math.floor(seconds/3600),m=Math.floor(seconds%3600/60),s=seconds%60;
+ return h?`${h}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`:`${m}:${String(s).padStart(2,'0')}`;
+}
+function elapsedThisTurn(g,now=serverNow()){
+ if(g?.status!=='playing'||g?.phase!=='play'||!Number.isFinite(g?.turnStartedAt)||!g.turnStartedAt)return 0;
+ return Math.max(0,now-g.turnStartedAt);
+}
+function finishPlayingTime(g,s,now=serverNow()){
+ g.thinkMs=g.thinkMs||[0,0];
+ const elapsed=elapsedThisTurn(g,now);
+ g.thinkMs[s]=(Number(g.thinkMs[s])||0)+elapsed;
+ g.lastTurnMs=elapsed;
+ g.turnStartedAt=null;
+}
+function beginNextTurn(g){g.turnStartedAt=g.status==='playing'&&g.phase==='play'?serverNow():null;}
+function syncTurnClock(){
+ const panel=$('turnClockPanel');if(!panel)return;
+ const visible=game?.status==='playing'&&(game.phase==='play'||game.phase==='challenge');
+ panel.classList.toggle('hidden',!visible);
+ if(!visible)return;
+ const active=game.phase==='play',p=player(),elapsed=active?elapsedThisTurn(game):Math.max(0,Number(game.lastTurnMs)||0);
+ $('turnClockLabel').textContent=active?`Player ${p+1} is choosing a word`:`Player ${p+1} finished their word`;
+ $('turnClockValue').textContent=active&&!(game.turnStartedAt>0)?'—:—':formatElapsed(elapsed);
+ const totals=game.thinkMs||[0,0];
+ for(let i=0;i<2;i++){
+  const live=active&&p===i?elapsed:0;
+  $(`thinking${i}`).textContent=formatElapsed((Number(totals[i])||0)+live);
+ }
+ const late=active&&elapsed>=300000,slow=active&&elapsed>=180000;
+ panel.classList.toggle('slow',slow);panel.classList.toggle('late',late);
+ $('turnClockFill').style.width=`${Math.min(100,Math.round(elapsed/180000*100))}%`;
+ $('turnClockHint').textContent=!active?'Challenge time is not counted toward the turn.':
+  !(game.turnStartedAt>0)?'Turn tracking will begin on the next turn in this existing game.':
+  late?'Over 5 minutes — still no automatic penalty.':
+  slow?'Over the suggested 3-minute pace — no penalty.':
+  'Suggested pace: 3 minutes · no automatic point penalty.';
+}
+
 // Safari/iPad requires audio to be unlocked by a real tap, not an automatic event.
 function enableChime(){
  try{
@@ -190,9 +235,9 @@ function render(){let active=!!game,playing=game?.status==='playing',myturn=canA
  $('card').textContent=game.challenge?.text||'';$('challengeTitle').textContent=`Player ${player()+1} challenge`;$('spectator').classList.toggle('hidden',myturn||!playing);$('spectator').textContent=`Waiting for Player ${player()+1} to finish their turn. Board updates automatically.`;
  if(game.phase==='finished'){$('winner').textContent=game.scores[0]===game.scores[1]?'It’s a tie!':(game.scores[0]>game.scores[1]?'Player 1 wins!':'Player 2 wins!')+` Final score ${game.scores[0]}–${game.scores[1]}.`;$('revealStatus').textContent=game.reveals?.[0]&&game.reveals?.[1]?'Both secret words revealed.':'Both players must reveal their secret words.';$('revealBtn').disabled=!!game.reveals?.[seat];if(game.reveals?.[0]&&game.reveals?.[1]){$('reveals').textContent=`Secret words: ${game.reveals[0]} / ${game.reveals[1]}`;
  $('secretBonusDetails').textContent=(game.secretMatches||[]).length?`Secret match bonus: ${(game.secretMatches||[]).map(s=>`Player ${s+1} +50`).join(' · ')}`:'Secret match bonus: no matches this game.'}}
- syncTimerView();preview();}
+ syncTimerView();syncTurnClock();preview();}
 async function mutate(fn){if(!code||!isOwner())return;try{const result=await runTransaction(gameRef(code),g=>{if(!g||g.status==='ended'||g.players?.[seat]!==uid)return;g=normalizeGame(g);const out=fn(g);if(out){out.version=(g.version||0)+1;return out}}, {applyLocally:false});if(!result.committed)say('That action could not be completed. The other iPad may have updated the game.')}catch(e){say('Could not save: '+e.message)}}
-function subscribe(c,s){code=c;seat=s;sessionStorage.setItem('afterdark-seat',String(s));if(unsub)unsub();unsub=onValue(gameRef(c),snap=>{let old=game,latest=snap.val();if(!latest){game=null;leave();say('This game is no longer available.');return}if(old&&(old.turn!==latest.turn||old.phase!==latest.phase)){pending={};chosenTile=null;resetFields();}game=normalizeGame(latest);try{render();if(old&&latest.bonusEvent?.id&&latest.bonusEvent.id!==old.bonusEvent?.id)showBonusEvent(latest.bonusEvent)}catch(e){console.error("Board render failed",e);say("Game display error: "+e.message)}},err=>say('Database connection: '+err.message));$('joinCode').value='';say('Connected to game '+c+' · digital board v3.5')}
+function subscribe(c,s){code=c;seat=s;sessionStorage.setItem('afterdark-seat',String(s));if(unsub)unsub();unsub=onValue(gameRef(c),snap=>{let old=game,latest=snap.val();if(!latest){game=null;leave();say('This game is no longer available.');return}if(old&&(old.turn!==latest.turn||old.phase!==latest.phase)){pending={};chosenTile=null;resetFields();}game=normalizeGame(latest);try{render();if(old&&latest.bonusEvent?.id&&latest.bonusEvent.id!==old.bonusEvent?.id)showBonusEvent(latest.bonusEvent)}catch(e){console.error("Board render failed",e);say("Game display error: "+e.message)}},err=>say('Database connection: '+err.message));$('joinCode').value='';say('Connected to game '+c+' · digital board v3.6')}
 function leave(){if(unsub){unsub();unsub=null}if(toastTimer)clearTimeout(toastTimer);$('bonusToast').classList.remove('visible');observedTimerKey=null;code=null;seat=-1;game=null;pending={};chosenTile=null;resetFields();render()}
 $('create').onclick=async()=>{if(!uid)return say('Connecting to Firebase…');try{for(let i=0;i<12;i++){let c=String(100000+Math.floor(Math.random()*900000)),g=initial();g.players={0:uid};const result=await runTransaction(gameRef(c),old=>old===null?g:undefined,{applyLocally:false});if(result.committed){subscribe(c,0);return}}say('Unable to allocate a game code. Try again.')}catch(e){say(e.message)}};
 $('join').onclick=async()=>{
@@ -222,15 +267,15 @@ $('join').onclick=async()=>{
   }catch(e){say('Join failed: '+(e.code||'error')+' — '+e.message)}
 };
 $('leave').onclick=()=>{leave();say('Enter the six-digit code to rejoin.')};
-$('secretSave').onclick=async()=>{let w=$('secret').value.trim().toUpperCase();if(!/^[A-Z]{4,8}$/.test(w))return say('Secret word must contain 4–8 letters.');if(!game?.players?.[1])return say('Wait for Wendy to join before submitting words.');try{await set(ref(db,`secrets/${code}/${seat}`),{uid,word:w});await mutate(g=>{if(g.status!=='lobby'||g.ready?.[seat])return;g.ready=g.ready||{};g.ready[seat]=true;if(g.ready[0]&&g.ready[1]){g.status='playing';drawToSeven(g,0);drawToSeven(g,1)}return g});$('secret').value='';say('Your secret word was saved privately.')}catch(e){say(e.message)}};
+$('secretSave').onclick=async()=>{let w=$('secret').value.trim().toUpperCase();if(!/^[A-Z]{4,8}$/.test(w))return say('Secret word must contain 4–8 letters.');if(!game?.players?.[1])return say('Wait for Wendy to join before submitting words.');try{await set(ref(db,`secrets/${code}/${seat}`),{uid,word:w});await mutate(g=>{if(g.status!=='lobby'||g.ready?.[seat])return;g.ready=g.ready||{};g.ready[seat]=true;if(g.ready[0]&&g.ready[1]){g.status='playing';drawToSeven(g,0);drawToSeven(g,1);beginNextTurn(g)}return g});$('secret').value='';say('Your secret word was saved privately.')}catch(e){say(e.message)}};
 document.querySelectorAll('input[name="bonus"]').forEach(e=>e.onchange=preview);
 $('submit').onclick=async()=>{let e=evaluate();if(e.error)return say(e.error);let before=clone(game),p=player();await mutate(g=>{if(g.status!=='playing'||g.phase!=='play'||(g.starting+g.turn)%2!==seat||g.version!==before.version)return;
  let old=game;game=g;let check=evaluate(g);game=old;if(check.error||check.word!==e.word||JSON.stringify(check.tiles)!==JSON.stringify(e.tiles))return;
  const rack=g.racks?.[seat]||[];if(e.tiles.some(t=>rack[t.rackIndex]!== (t.blank?'?':t.letter)))return;
  const tier=bonusForWord(check.word),earned=check.total+tier.points;
- g.moves=g.moves||[];g.moves.push({player:p,word:check.word,points:earned,afterDarkBonus:tier.points,afterDarkTier:tier.tier,previous:{tiles:clone(g.tiles),scores:[...g.scores],draws:clone(g.draws),racks:clone(g.racks),bag:[...g.bag],bonusEvent:g.bonusEvent||null,turn:g.turn,phase:'play'}});
+ g.moves=g.moves||[];g.moves.push({player:p,word:check.word,points:earned,afterDarkBonus:tier.points,afterDarkTier:tier.tier,previous:{tiles:clone(g.tiles),scores:[...g.scores],draws:clone(g.draws),racks:clone(g.racks),bag:[...g.bag],bonusEvent:g.bonusEvent||null,thinkMs:[...(g.thinkMs||[0,0])],turnStartedAt:g.turnStartedAt||null,lastTurnMs:g.lastTurnMs||0,turn:g.turn,phase:'play'}});
  if(tier.points)g.bonusEvent={id:`word-${g.moves.length}-${g.turn}`,kind:'word',awards:[{player:p,word:check.word,points:tier.points,tier:tier.tier}]};
- for(let t of e.tiles)g.tiles[k(t.r,t.c)]={letter:t.letter,blank:t.blank};g.racks[seat]=rack.filter((_,i)=>!e.tiles.some(t=>t.rackIndex===i));drawToSeven(g,seat);g.scores[p]+=earned;
+ for(let t of e.tiles)g.tiles[k(t.r,t.c)]={letter:t.letter,blank:t.blank};g.racks[seat]=rack.filter((_,i)=>!e.tiles.some(t=>t.rackIndex===i));drawToSeven(g,seat);g.scores[p]+=earned;finishPlayingTime(g,p);
  let rd=Math.min(2,Math.floor(g.turn/8)),draws=g.draws[rd]||[],available=deck[rd].map((_,i)=>i).filter(i=>!draws.includes(i));if(!available.length){g.draws[rd]=[];available=deck[rd].map((_,i)=>i)}let pick=available[Math.floor(Math.random()*available.length)];g.draws[rd].push(pick);g.challenge={text:deck[rd][pick],player:p,responses:{},durationSeconds:TIMED_CHALLENGES.get(deck[rd][pick])||0};g.phase='challenge';return g});pending={};chosenTile=null};
 async function respondToChallenge(response){await mutate(g=>{
  if(g.status!=='playing'||g.phase!=='challenge'||!g.challenge||!['accepted','declined'].includes(response))return;
@@ -243,7 +288,7 @@ $('acceptChallenge').onclick=()=>{enableChime();return respondToChallenge('accep
 $('declineChallenge').onclick=()=>respondToChallenge('declined');
 function advanceChallenge(){return mutate(g=>{
  if(g.status!=='playing'||g.phase!=='challenge'||(g.starting+g.turn)%2!==seat||choiceStatus(g.challenge)==='pending'||!timerSatisfied(g.challenge))return;
- g.turn++;g.phase=g.turn>=24?'finished':'play';g.challenge=null;return g;
+ g.turn++;g.phase=g.turn>=24?'finished':'play';g.challenge=null;beginNextTurn(g);return g;
 })}
 $('next').onclick=advanceChallenge;
 $('timerAdvance').onclick=advanceChallenge;
@@ -263,10 +308,11 @@ $('enableTimerSound').onclick=()=>{enableChime();syncTimerView()};
 // Use Firebase's clock offset so the countdown agrees across two devices.
 onValue(ref(db,'.info/serverTimeOffset'),snapshot=>{serverTimeOffset=Number(snapshot.val())||0},()=>{});
 setInterval(syncTimerView,250);
+setInterval(syncTurnClock,1000);
 if(typeof document.addEventListener==='function')document.addEventListener('visibilitychange',syncTimerView);
-function undo(g){if((g.starting+g.turn)%2!==seat)return;let m=g.moves?.at(-1);if(!m||m.player!==seat)return;g.tiles=m.previous.tiles;g.scores=m.previous.scores;g.draws=m.previous.draws;if(m.previous.racks)g.racks=m.previous.racks;if(m.previous.bag)g.bag=m.previous.bag;g.turn=m.previous.turn;g.phase='play';g.challenge=null;g.bonusEvent=m.previous.bonusEvent||null;g.moves.pop();return g}
+function undo(g){if((g.starting+g.turn)%2!==seat)return;let m=g.moves?.at(-1);if(!m||m.player!==seat)return;g.tiles=m.previous.tiles;g.scores=m.previous.scores;g.draws=m.previous.draws;if(m.previous.racks)g.racks=m.previous.racks;if(m.previous.bag)g.bag=m.previous.bag;g.turn=m.previous.turn;g.phase='play';g.challenge=null;g.bonusEvent=m.previous.bonusEvent||null;if(m.previous.thinkMs)g.thinkMs=m.previous.thinkMs;g.turnStartedAt=m.previous.turnStartedAt||null;g.lastTurnMs=m.previous.lastTurnMs||0;g.moves.pop();return g}
 $('undo').onclick=()=>mutate(g=>{if(g.phase!=='play')return;return undo(g)});$('undoChallenge').onclick=()=>mutate(g=>{if(g.phase!=='challenge'||Object.keys(g.challenge?.responses||{}).length)return;return undo(g)});
-$('skip').onclick=()=>mutate(g=>{if(g.phase!=='play'||(g.starting+g.turn)%2!==seat)return;g.moves=g.moves||[];g.moves.push({player:seat,word:null,points:0,previous:{tiles:clone(g.tiles),scores:[...g.scores],draws:clone(g.draws),racks:clone(g.racks),bag:[...g.bag],turn:g.turn,phase:'play'}});g.turn++;g.phase=g.turn>=24?'finished':'play';return g});
+$('skip').onclick=()=>mutate(g=>{if(g.phase!=='play'||(g.starting+g.turn)%2!==seat)return;g.moves=g.moves||[];g.moves.push({player:seat,word:null,points:0,previous:{tiles:clone(g.tiles),scores:[...g.scores],draws:clone(g.draws),racks:clone(g.racks),bag:[...g.bag],thinkMs:[...(g.thinkMs||[0,0])],turnStartedAt:g.turnStartedAt||null,lastTurnMs:g.lastTurnMs||0,turn:g.turn,phase:'play'}});finishPlayingTime(g,seat);g.turn++;g.phase=g.turn>=24?'finished':'play';beginNextTurn(g);return g});
 $('end').onclick=async()=>{if(!confirm('End this shared game for both players? This cannot be undone.'))return;await mutate(g=>{g.status='ended';return g})};
 $('revealBtn').onclick=async()=>{if(game?.phase!=='finished')return;try{let snap=await get(ref(db,`secrets/${code}/${seat}`)),w=snap.val()?.word;if(!w)return say('Your secret word could not be found.');await mutate(g=>{if(g.phase!=='finished'||g.reveals?.[seat])return;g.reveals=g.reveals||{};g.reveals[seat]=w;if(g.reveals[0]&&g.reveals[1]&&!g.secretAwarded){
  g.secretAwarded=true;g.secretMatches=[];const awards=[];
