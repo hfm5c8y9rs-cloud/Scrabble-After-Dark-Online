@@ -1,4 +1,5 @@
 import {WORDS} from './words.js';
+import {CARDS,byId,selectChallenge} from './challenges.js';
 import {initializeApp} from 'https://www.gstatic.com/firebasejs/11.10.0/firebase-app.js';
 import {getAuth,signInAnonymously,onAuthStateChanged} from 'https://www.gstatic.com/firebasejs/11.10.0/firebase-auth.js';
 import {getDatabase,ref,get,set,onValue,runTransaction,remove} from 'https://www.gstatic.com/firebasejs/11.10.0/firebase-database.js';
@@ -7,12 +8,100 @@ const fb=initializeApp(config),auth=getAuth(fb),db=getDatabase(fb);let uid=null,
 const $=id=>document.getElementById(id),say=(s)=>{$('message').textContent=s},gameRef=c=>ref(db,'games/'+c),seatName=s=>s===0?'You':'Wendy';
 const V={A:1,B:3,C:3,D:2,E:1,F:4,G:2,H:4,I:1,J:8,K:5,L:1,M:3,N:1,O:1,P:3,Q:10,R:1,S:1,T:1,U:1,V:4,W:4,X:8,Y:4,Z:10};
 const TW=['0,0','0,7','0,14','7,0','7,14','14,0','14,7','14,14'],DW=['1,1','2,2','3,3','4,4','7,7','10,10','11,11','12,12','13,13','1,13','2,12','3,11','4,10','10,4','11,3','12,2','13,1'],TL=['1,5','1,9','5,1','5,5','5,9','5,13','9,1','9,5','9,9','9,13','13,5','13,9'],DL=['0,3','0,11','2,6','2,8','3,0','3,7','3,14','6,2','6,6','6,8','6,12','7,3','7,11','8,2','8,6','8,8','8,12','11,0','11,7','11,14','12,6','12,8','14,3','14,11'];
-const deck=[["Give your partner a slow 30-second kiss.","Name three things you find irresistible about your partner.","Whisper a compliment in your partner’s ear.","Describe your favorite romantic memory together.","Ask your partner where they would like a gentle kiss.","Tell your partner when you last found them especially attractive.","Hold each other close for one minute.","Describe your ideal date night.","Hold hands and maintain eye contact for 30 seconds.","Tell your partner which smile or expression of theirs you love most.","Take turns sharing one small thing the other did that made you feel appreciated.","Give your partner three different compliments without repeating yourself.","Slow dance together for one minute, with or without music.","Give your partner a 45-second hand massage.","Recreate the first look you gave your partner on an early date.","Describe the perfect lazy Sunday morning together.","Ask your partner which shared trip they would happily repeat.","Give each other a 20-second forehead-to-forehead cuddle.","Share one habit of your partner that you secretly find endearing.","Invent a private nickname for tonight and explain it.","Each name a song that reminds you of the other.","Say something romantic in the most dramatic movie-trailer voice you can manage.","Let your partner choose where you plant three quick, comfortable kisses.","Describe one moment you felt especially proud to be together.","Give your partner a sincere, uninterrupted 60-second appreciation speech.","Challenge each other to a 30-second no-laughing gaze.","Recall the first date you would love to relive.","Tell your partner one feature you noticed the first time you met.","Trace a heart on your partner’s palm with one finger.","Choose one thing you will do tomorrow just to make your partner smile.","Share the sweetest text message you wish you had sent them.","Give your partner a soft 30-second shoulder rub.","Describe your dream anniversary celebration together.","Whisper a playful invitation for a future date night.","Give your partner a 15-second hug without talking.","Each name a shared inside joke that still makes you laugh.","Tell your partner what you most look forward to doing together this year.","Ask for a kiss in the most charming way you can think of.","Choose a romantic movie scene you would like to reenact—keep it playful.","Sit close and quietly listen to each other breathe for 30 seconds."],["Give your partner a two-minute shoulder massage.","Share a private romantic fantasy you are comfortable discussing.","Ask what kind of affectionate touch your partner enjoys most.","Choose a song for a slow dance.","Describe an outfit you find particularly attractive.","Kiss for one minute without speaking.","Describe a romantic surprise you would enjoy.","Tell your partner something new you would like to explore together.","Give your partner a 45-second lingering kiss, if you both want one.","Describe a flirtatious message you would love to receive unexpectedly.","Take turns describing a moment your partner caught your attention across a room.","Whisper an invitation to a private date later tonight.","Ask your partner to choose between a slow kiss and a two-minute back rub.","Give your partner a slow one-minute neck-and-shoulder massage.","Tell your partner which kind of anticipation you enjoy most: words, looks, or touch.","Trade your best mischievous smile without speaking for 30 seconds.","Describe a moment you wished you could steal a kiss.","Share one playful, romantic dare you would happily accept.","Give your partner five compliments, each a little more flirtatious.","Let your partner pick a comfortable spot for a 20-second kiss.","Describe a romantic atmosphere that instantly puts you in the mood.","Tell your partner what makes a kiss unforgettable for you.","Slow dance chest-to-chest for 90 seconds if you both feel comfortable.","Ask what type of surprise affection feels most welcome to your partner.","Recreate a favorite flirtatious look from your dating days.","Offer a one-minute foot massage or trade for one.","Share a flattering, slightly cheeky observation you have been keeping to yourself.","Describe the ideal first five minutes of a romantic evening.","Let your partner guide your hands to a comfortable place to hold them.","Tell your partner a memory of a kiss that stayed with you.","Whisper three words that capture how your partner makes you feel.","Ask your partner one question about what makes them feel desirable.","Give each other a one-minute cuddle with no phones or conversation.","Offer your partner a choice: a flirtatious compliment or a tender kiss.","Tell your partner about a private getaway you would plan just for the two of you.","Describe the kind of teasing banter you enjoy without crossing a boundary.","Give your partner a one-minute scalp massage if they enjoy it.","Describe a romantic gesture that would be a pleasant surprise tonight.","Ask whether your partner prefers taking the lead or being surprised on date night.","Make a mutually welcome promise for a more adventurous date this month."],["Ask one intimate question; answering is optional.","Describe an ideal private evening together.","Share a desire you have not talked about much.","Let your partner choose a comfortable way to be held or kissed.","Take two minutes to focus entirely on your partner.","Suggest a new mutually welcome romantic experience.","Each share something you would like more of in your time together.","Choose a mutually agreed romantic reward for after the game.","Ask your partner directly what kind of foreplay helps them feel most wanted.","Share one sexual fantasy you would like to discuss, with no expectation of acting on it.","Tell your partner one intimate boundary that makes you feel safe and respected.","Ask your partner what they would like you to initiate more often.","Describe an adult-only date-night scenario that excites you both.","Tell your partner the most alluring thing they do without realizing it.","Ask what makes your partner feel genuinely sexy and confident.","Give your partner a slow 90-second kiss, if you both enthusiastically agree.","Share one intimate idea you have been shy about bringing up.","Ask whether your partner would enjoy being surprised with a private romantic evening.","Tell your partner what kind of affectionate teasing you find exciting.","Discuss a fantasy setting for a romantic night, with every detail optional.","Offer a two-minute sensual but comfortable back massage.","Ask which words of desire your partner most enjoys hearing.","Tell your partner one way you would like to build anticipation before intimacy.","Ask what kind of initiation feels most romantic rather than pressuring.","Exchange a private confession about what you find especially attractive.","Invite your partner to describe a new experience they might like to explore together.","Whisper a bold compliment about how much you desire your partner.","Let your partner choose a comfortable two-minute kissing or cuddling challenge.","Ask what your partner wishes you understood better about their desire.","Tell your partner a fantasy you would rather keep as fantasy, and why.","Discuss whether you would both enjoy a playful role-reversal on a future date.","Offer to plan a private evening around one of your partner’s stated preferences.","Ask your partner how they prefer to communicate a yes, no, or not tonight.","Describe a daring but mutually comfortable way to flirt in private.","Share something you would enjoy trying at a slower pace.","Kiss your partner softly for 30 seconds, then tell them how it felt.","Describe an outfit—or no particular outfit—that makes you feel desirable.","Ask your partner what helps them transition from everyday stress into intimacy.","Each suggest one intimate activity for later; choose only if you both want it.","Tell your partner one specific thing you appreciate about your sexual connection."]];
 const k=(r,c)=>r+','+c,prem=(r,c)=>{let q=k(r,c);return TW.includes(q)?'tw':DW.includes(q)?'dw':TL.includes(q)?'tl':DL.includes(q)?'dl':''},clone=x=>JSON.parse(JSON.stringify(x));
-const initial=()=>({status:'lobby',players:{},names:{},ready:{},secrets:{},scores:[0,0],tiles:{},turn:0,starting:Math.random()<.5?0:1,phase:'play',draws:[[],[],[]],bag:makeBag(),racks:{0:[],1:[]},moves:[],challenge:null,ended:false,turnStartedAt:null,thinkMs:[0,0],lastTurnMs:0,version:0});
+const initial=()=>({status:'lobby',players:{},names:{},ready:{},secrets:{},scores:[0,0],tiles:{},turn:0,starting:Math.random()<.5?0:1,phase:'play',draws:[[],[],[]],bag:makeBag(),racks:{0:[],1:[]},moves:[],challenge:null,ended:false,turnStartedAt:null,thinkMs:[0,0],lastTurnMs:0,challengeHistory:[],endRequest:null,version:0});
 const player=()=>game?(game.starting+game.turn)%2:0,round=()=>Math.min(2,Math.floor((game?.turn||0)/8)),canAct=()=>game?.status==='playing'&&seat===player(),isOwner=()=>seat>=0&&game?.players?.[seat]===uid;
 // Both players must explicitly opt in; one decline skips the challenge.
 const choiceStatus=challenge=>{if(!challenge)return 'pending';const r=challenge.responses||{};if(r[0]==='declined'||r[1]==='declined')return 'declined';return r[0]==='accepted'&&r[1]==='accepted'?'accepted':'pending'};
+// Two-device challenge progression. Acceptance precedes any interactive prompts.
+const challengeCard=ch=>byId.get(ch?.cardId)||null;
+function flowDone(ch){
+ if(!ch||choiceStatus(ch)!=='accepted'||ch.skipped)return true;
+ const card=challengeCard(ch);
+ if(!card)return true; // Gracefully finish a challenge created by an older build.
+ if(card.kind==='choice'||card.kind==='wildcard'||card.pickerInput||(card.kind==='timed'&&card.options))return ch.selection!==undefined;
+ if(card.kind==='reveal'){
+  if(card.offerTwo)return Array.isArray(ch.offers)&&ch.offers.length===2&&ch.selection!==undefined;
+  if(!ch.entries||typeof ch.entries[0]!=='string'||typeof ch.entries[1]!=='string')return false;
+  return !card.selectAfterReveal||ch.selection!==undefined;
+ }
+ return true;
+}
+function activityDone(ch){return !ch||choiceStatus(ch)==='declined'||!!ch.skipped||flowDone(ch)&&timerSatisfied(ch)}
+function recentSeen(){try{return JSON.parse(localStorage.getItem('afterdark-seen-40')||'[]')}catch{return []}}
+function rememberCard(id){if(!id)return;try{const seen=recentSeen().filter(x=>x!==id);seen.push(id);localStorage.setItem('afterdark-seen-40',JSON.stringify(seen.slice(-120)))}catch{}}
+const newChallenge=card=>({cardId:card.id,title:card.title,text:card.prompt,player:0,responses:{},durationSeconds:card.durationSeconds||0});
+const safeInput=value=>String(value||'').trim().replace(/\s+/g,' ').slice(0,160);
+function mkButton(label,callback){const btn=document.createElement('button');btn.type='button';btn.textContent=label;btn.onclick=callback;return btn}
+function showFlowOptions(options,handler){
+ const area=$('flowOptions');area.innerHTML='';
+ for(let i=0;i<options.length;i++)area.append(mkButton(options[i],()=>handler(i)));
+ area.classList.toggle('hidden',!options.length);
+}
+function showFlowInputs({label='Your answer',two=false,submit='Submit answer',onSubmit}){
+ $('flowInputWrap').classList.remove('hidden');$('flowInputLabel').textContent=label;
+ $('flowInput2Wrap').classList.toggle('hidden',!two);
+ $('flowSubmit').textContent=submit;
+ $('flowSubmit').onclick=()=>{const v=safeInput($('flowInput').value),w=safeInput($('flowInput2').value);if(!v||(two&&!w))return say('Enter '+(two?'both options.':'an answer.'));onSubmit(v,w)};
+}
+async function saveFlow(fn){return mutate(g=>{
+ if(g.status!=='playing'||g.phase!=='challenge'||choiceStatus(g.challenge)!=='accepted'||g.challenge?.skipped)return;
+ const card=challengeCard(g.challenge);if(!card)return;
+ return fn(g.challenge,card)?g:undefined;
+})}
+function renderChallengeFlow(){
+ const ch=game?.challenge,card=challengeCard(ch),active=game?.status==='playing'&&game.phase==='challenge'&&choiceStatus(ch)==='accepted';
+ const root=$('challengeFlow');root.classList.toggle('hidden',!active);
+ if(!active)return;
+ $('flowInputWrap').classList.add('hidden');$('flowOptions').classList.add('hidden');$('flowReveal').classList.add('hidden');
+ $('flowLead').textContent='';$('flowStatus').textContent='';$('flowOptions').innerHTML='';
+ $('flowSkip').disabled=!!ch.skipped;
+ if(ch.skipped){$('flowStatus').textContent='Activity skipped — no penalty. The word-playing player may advance.';return}
+ if(!card){$('flowStatus').textContent='Enjoy the challenge, then advance the turn.';return}
+ const actor=ch.player,picker=1-actor,myPicker=seat===picker,myActor=seat===actor;
+ const selected=ch.selection!==undefined;
+ const selectionText=selected?(card.options?.[ch.selection]||ch.choiceText||ch.offers?.[ch.selection]||ch.entries?.[ch.selection]||'Your selection'):'';
+ if(card.kind==='choice'||card.kind==='wildcard'||card.pickerInput||(card.kind==='timed'&&card.options)){
+  if(selected){$('flowReveal').textContent='Chosen: '+selectionText;$('flowReveal').classList.remove('hidden');$('flowStatus').textContent='Carry out the selected challenge, then continue.';return}
+  $('flowLead').textContent=card.pickerPrompt||(myPicker?'Choose what your partner will do.':'Your partner is choosing an option.');
+  if(!myPicker){$('flowStatus').textContent='Waiting for Player '+(picker+1)+' to make the selection.';return}
+  if(card.pickerInput){showFlowInputs({label:card.pickerPrompt||'Choose a song or genre',submit:'Send choice',onSubmit:v=>saveFlow(ch=>{if(ch.selection!==undefined)return false;ch.selection=-1;ch.choiceText=v;return true})});return}
+  showFlowOptions(card.options||[],i=>saveFlow(ch=>{if(ch.selection!==undefined)return false;ch.selection=i;return true}));return;
+ }
+ if(card.kind==='reveal'){
+  if(card.offerTwo){
+   if(!Array.isArray(ch.offers)){
+    if(myActor){$('flowLead').textContent='Enter two options for your partner to choose.';
+     showFlowInputs({label:'Option A',two:true,submit:'Send both options',onSubmit:(a,b)=>saveFlow(ch=>{if(ch.offers)return false;ch.offers=[a,b];return true})});
+    }else $('flowStatus').textContent='Waiting for Player '+(actor+1)+' to create two options.';
+    return;
+   }
+   if(!selected){$('flowLead').textContent='Choose between the two proposed activities.';
+    if(myPicker)showFlowOptions(ch.offers,i=>saveFlow(ch=>{if(ch.selection!==undefined)return false;ch.selection=i;return true}));
+    else $('flowStatus').textContent='Waiting for your partner to choose.';
+    return;
+   }
+   $('flowReveal').textContent='Your partner chose: '+ch.offers[ch.selection];$('flowReveal').classList.remove('hidden');return;
+  }
+  const entries=ch.entries||{},hasMine=typeof entries[seat]==='string',both=typeof entries[0]==='string'&&typeof entries[1]==='string';
+  if(!both){
+   if(!hasMine){
+    $('flowLead').textContent=card.presetEntryOptions?'Pick a secret answer; both will appear together.':'Enter your answer. It will appear to both players after both submit.';
+    if(card.presetEntryOptions)showFlowOptions(card.presetEntryOptions,i=>saveFlow(ch=>{ch.entries=ch.entries||{};if(ch.entries[seat])return false;ch.entries[seat]=card.presetEntryOptions[i];return true}));
+    else showFlowInputs({label:card.id==='R3-19'?'Your preference (and what to save for later)':'Your private answer',submit:'Lock in answer',onSubmit:v=>saveFlow(ch=>{ch.entries=ch.entries||{};if(ch.entries[seat])return false;ch.entries[seat]=v;return true})});
+   }else $('flowStatus').textContent='Your answer is saved. Waiting for the other player.';
+   return;
+  }
+  $('flowReveal').classList.remove('hidden');$('flowReveal').textContent='Player 1: '+entries[0]+'\nPlayer 2: '+entries[1];
+  if(card.selectAfterReveal&&ch.selection===undefined){
+   $('flowLead').textContent=myPicker?'Select one revealed option.':'Your partner is choosing one of the revealed options.';
+   if(myPicker)showFlowOptions([entries[0],entries[1]],i=>saveFlow(ch=>{if(ch.selection!==undefined)return false;ch.selection=i;return true}));
+  }else $('flowStatus').textContent=card.selectAfterReveal?'Selected: '+entries[ch.selection]:'Both answers revealed. Continue whenever you are ready.';
+  return;
+ }
+ if(card.id==='R3-39'){$('flowLead').textContent='Want to end Scrabble together?';showFlowOptions(['Invite your partner: The Board Can Wait'],()=>{$('end').click()});return}
+ $('flowStatus').textContent=card.durationSeconds?'Start the shared countdown below.':'Carry out the challenge, then continue.';
+}
 const resetFields=()=>{$('word').value='';$('blanks').value='';$('word').dataset.last='';selected=null;editing=false};
 const DISTRIBUTION={A:9,B:2,C:2,D:4,E:12,F:2,G:3,H:2,I:9,J:1,K:1,L:4,M:2,N:6,O:8,P:2,Q:1,R:6,S:4,T:6,U:4,V:2,W:2,X:1,Y:2,Z:1,'?':2};
 const makeBag=()=>Object.entries(DISTRIBUTION).flatMap(([l,n])=>Array(n).fill(l)).sort(()=>Math.random()-.5);
@@ -34,6 +123,7 @@ function normalizeGame(g){
  if(!Array.isArray(g.scores))g.scores=[0,0];
  if(!g.ready)g.ready={};
  if(!Array.isArray(g.thinkMs))g.thinkMs=[0,0];
+ if(!Array.isArray(g.challengeHistory))g.challengeHistory=[];
  if(!Number.isFinite(g.thinkMs[0]))g.thinkMs[0]=0;
  if(!Number.isFinite(g.thinkMs[1]))g.thinkMs[1]=0;
  return g;
@@ -106,8 +196,13 @@ function showBonusEvent(event){
 // Challenge library: 40 unique prompts per round. Timed prompts carry their specific countdown in seconds.
 // Within each round, a random challenge is drawn without replacement.
 // Timed challenges use an explicit mapping; untimed prompts never start a clock.
-const TIMED_CHALLENGES=new Map([["Give your partner a slow 30-second kiss.",30],["Hold each other close for one minute.",60],["Hold hands and maintain eye contact for 30 seconds.",30],["Slow dance together for one minute, with or without music.",60],["Give your partner a 45-second hand massage.",45],["Give each other a 20-second forehead-to-forehead cuddle.",20],["Give your partner a sincere, uninterrupted 60-second appreciation speech.",60],["Challenge each other to a 30-second no-laughing gaze.",30],["Give your partner a soft 30-second shoulder rub.",30],["Give your partner a 15-second hug without talking.",15],["Sit close and quietly listen to each other breathe for 30 seconds.",30],["Give your partner a two-minute shoulder massage.",120],["Kiss for one minute without speaking.",60],["Give your partner a 45-second lingering kiss, if you both want one.",45],["Give your partner a slow one-minute neck-and-shoulder massage.",60],["Trade your best mischievous smile without speaking for 30 seconds.",30],["Let your partner pick a comfortable spot for a 20-second kiss.",20],["Slow dance chest-to-chest for 90 seconds if you both feel comfortable.",90],["Offer a one-minute foot massage or trade for one.",60],["Give each other a one-minute cuddle with no phones or conversation.",60],["Give your partner a one-minute scalp massage if they enjoy it.",60],["Take two minutes to focus entirely on your partner.",120],["Give your partner a slow 90-second kiss, if you both enthusiastically agree.",90],["Offer a two-minute sensual but comfortable back massage.",120],["Let your partner choose a comfortable two-minute kissing or cuddling challenge.",120],["Kiss your partner softly for 30 seconds, then tell them how it felt.",30]]);
-const challengeSeconds=ch=>ch?Number(ch.durationSeconds)||TIMED_CHALLENGES.get(ch.text)||0:0;
+const challengeSeconds=ch=>{
+ const card=byId.get(ch?.cardId);
+ if(!card)return Number(ch?.durationSeconds)||0;
+ const selected=ch?.selection;
+ const durations=card.optionSeconds;
+ return (Array.isArray(durations)&&selected!==undefined?Number(durations[selected]):0)||Number(card.durationSeconds)||0;
+};
 let serverTimeOffset=0,soundCtx=null,soundEnabled=false,observedTimerKey=null,chimedTimerKey=null;
 const serverNow=()=>Date.now()+serverTimeOffset;
 // Every client uses the Firebase-adjusted clock and a shared turn start timestamp.
@@ -181,7 +276,7 @@ function timerComplete(ch){return !!(ch?.timer?.endsAt&&serverNow()>=ch.timer.en
 function timerSatisfied(ch){return choiceStatus(ch)!=='accepted'||!challengeSeconds(ch)||!!ch?.timer?.skipped||timerComplete(ch)}
 function syncTimerView(){
  const ch=game?.challenge,seconds=challengeSeconds(ch);
- const active=game?.status==='playing'&&game?.phase==='challenge'&&choiceStatus(ch)==='accepted'&&seconds>0&&!ch?.timer?.skipped;
+ const active=game?.status==='playing'&&game?.phase==='challenge'&&choiceStatus(ch)==='accepted'&&flowDone(ch)&&!ch?.skipped&&seconds>0&&!ch?.timer?.skipped;
  const curtain=$('timerCurtain');if(!curtain)return;
  curtain.classList.toggle('hidden',!active);
  if(!active){observedTimerKey=null;return}
@@ -213,7 +308,7 @@ function preview(){if(!game)return;const e=canAct()&&game.phase==='play'?evaluat
 function render(){let active=!!game,playing=game?.status==='playing',myturn=canAct();$('welcome').classList.toggle('hidden',active);$('game').classList.toggle('hidden',!active);if(!active)return;
  $('gameCode').textContent=code;$('seatLabel').textContent=`Player ${seat+1}`;$('score0').innerHTML=`Player 1 <strong>${game.scores[0]}</strong>`;$('score1').innerHTML=`Player 2 <strong>${game.scores[1]}</strong>`;
  $('round').textContent='Round '+(round()+1)+' / 3';$('status').textContent=game.status==='lobby'?'Waiting for both secret words':game.status==='ended'?'Game ended':game.phase==='finished'?'Game complete':`Player ${player()+1} · turn ${game.turn+1} of 24`;
- $('lobby').classList.toggle('hidden',game.status!=='lobby');$('play').classList.toggle('hidden',!playing||game.phase!=='play');$('challenge').classList.toggle('hidden',!playing||game.phase!=='challenge');$('finished').classList.toggle('hidden',!playing||game.phase!=='finished');$('ended').classList.toggle('hidden',game.status!=='ended');$('secretInputArea').classList.toggle('hidden',!!game.ready?.[seat]);$('lobbyInfo').textContent=`Your word: ${game.ready?.[seat]?'saved privately':'not submitted'} · Partner: ${game.ready?.[1-seat]?'ready':'waiting'}`;
+ $('lobby').classList.toggle('hidden',game.status!=='lobby');$('play').classList.toggle('hidden',!playing||game.phase!=='play');$('challenge').classList.toggle('hidden',!playing||game.phase!=='challenge');$('finished').classList.toggle('hidden',!playing||game.phase!=='finished');$('ended').classList.toggle('hidden',game.status!=='ended');if(game.status==='ended')$('endedDetails').textContent=game.endReason==='mutual'?`The Board Can Wait. Final scores: ${game.scores[0]}–${game.scores[1]}.`:`Game ended. Final scores: ${game.scores[0]}–${game.scores[1]}.`;$('secretInputArea').classList.toggle('hidden',!!game.ready?.[seat]);$('lobbyInfo').textContent=`Your word: ${game.ready?.[seat]?'saved privately':'not submitted'} · Partner: ${game.ready?.[1-seat]?'ready':'waiting'}`;
  $('board').innerHTML='';$('board').style.display=playing?'grid':'none';if(playing){for(let r=0;r<15;r++)for(let c=0;c<15;c++){let b=document.createElement('button'),t=pending[k(r,c)]||game.tiles[k(r,c)],p=prem(r,c);b.className='sq '+(t?'placed':p)+(pending[k(r,c)]?' selected':'');b.textContent=t?t.letter:({tw:'TW',dw:'DW',tl:'TL',dl:'DL'}[p]||'');b.disabled=!myturn||game.phase!=='play';b.setAttribute('aria-label',`Row ${r+1}, column ${c+1}`);b.onclick=()=>chooseSquare(r,c);$('board').append(b)}}
  let rack=$('tileRack');if(!rack){rack=document.createElement('div');rack.id='tileRack';rack.style.cssText='display:flex;gap:5px;justify-content:center;flex-wrap:wrap;margin:14px 0';$('board').insertAdjacentElement('afterend',rack)}rack.innerHTML='';if(playing&&game.phase==='play'){rackFor(seat).forEach((letter,i)=>{let b=document.createElement('button');b.textContent=letter==='?'?'BLANK':`${letter} ${V[letter]||0}`;b.disabled=!myturn||Object.values(pending).some(t=>t.rackIndex===i);b.style.cssText=`min-width:40px;min-height:48px;border:2px solid ${chosenTile===i?'#e6ac64':'#9c7383'};border-radius:7px;background:#e8d2a2;color:#302315;font-weight:bold`;b.onclick=()=>{chosenTile=i;render()};rack.append(b)})}
  for(const id of ['submit','skip','undo'])$(id).disabled=!myturn||game.phase!=='play';
@@ -223,17 +318,17 @@ function render(){let active=!!game,playing=game?.status==='playing',myturn=canA
  $('declineChallenge').disabled=!inChallenge||!isOwner()||decision!=='pending'||!!myChoice;
  $('challengeChoices').classList.toggle('hidden',!inChallenge||decision!=='pending'||!!myChoice);
  $('challengeResponses').textContent=inChallenge?`Your response: ${myChoice||'waiting'} · Partner: ${otherChoice||'waiting'}`:'';
- $('challengeGuidance').textContent=inChallenge?'Both players choose independently. Either person may decline, without penalty.':'';
- $('challengeDecision').textContent=!inChallenge?'':decision==='declined'?'Declined — challenge skipped. No penalty.':decision==='accepted'?(challengeSeconds(ch)?'Accepted by both — synchronized challenge timer is ready.':'Accepted by both — enjoy the challenge when you are both ready.'):myChoice?'Waiting for your partner to respond.':'Choose Accept or Decline. Your partner sees the same challenge.';
- $('next').disabled=!inChallenge||!myturn||decision==='pending'||!timerSatisfied(ch);
+ $('challengeGuidance').textContent=inChallenge?'Both players choose Accept or Decline, then follow the on-screen prompts.':'';
+ $('challengeDecision').textContent=!inChallenge?'':decision==='declined'?'Declined — challenge skipped. No penalty.':decision==='accepted'?(challengeSeconds(ch)?'Accepted by both — synchronized challenge timer is ready.':'Accepted — follow the challenge controls below.'):myChoice?'Waiting for your partner to respond.':'Choose Accept or Decline. Your partner sees the same challenge.';
+ $('next').disabled=!inChallenge||!myturn||decision==='pending'||!activityDone(ch);
  $('undoChallenge').disabled=!inChallenge||!myturn||Object.keys(responses).length>0;
  for(const id of ['word','blanks','dir']){let el=$(id);if(el)el.closest('label,div')?.classList.add('hidden')}
- $('card').textContent=game.challenge?.text||'';$('challengeTitle').textContent=`Player ${player()+1} challenge`;$('spectator').classList.toggle('hidden',myturn||!playing);$('spectator').textContent=`Waiting for Player ${player()+1} to finish their turn. Board updates automatically.`;
+ $('card').textContent=game.challenge?.text||'';$('challengeTitle').textContent=ch?.title?`After Dark · ${ch.title}`:`Player ${player()+1} challenge`;renderChallengeFlow();renderEndInvitation();$('spectator').classList.toggle('hidden',myturn||!playing);$('spectator').textContent=`Waiting for Player ${player()+1} to finish their turn. Board updates automatically.`;
  if(game.phase==='finished'){$('winner').textContent=game.scores[0]===game.scores[1]?'It’s a tie!':(game.scores[0]>game.scores[1]?'Player 1 wins!':'Player 2 wins!')+` Final score ${game.scores[0]}–${game.scores[1]}.`;$('revealStatus').textContent=game.reveals?.[0]&&game.reveals?.[1]?'Both secret words revealed.':'Both players must reveal their secret words.';$('revealBtn').disabled=!!game.reveals?.[seat];if(game.reveals?.[0]&&game.reveals?.[1]){$('reveals').textContent=`Secret words: ${game.reveals[0]} / ${game.reveals[1]}`;
  $('secretBonusDetails').textContent=(game.secretMatches||[]).length?`Secret match bonus: ${(game.secretMatches||[]).map(s=>`Player ${s+1} +50`).join(' · ')}`:'Secret match bonus: no matches this game.'}}
  syncTimerView();syncTurnClock();preview();}
 async function mutate(fn){if(!code||!isOwner())return;try{const result=await runTransaction(gameRef(code),g=>{if(!g||g.status==='ended'||g.players?.[seat]!==uid)return;g=normalizeGame(g);const out=fn(g);if(out){out.version=(g.version||0)+1;return out}}, {applyLocally:false});if(!result.committed)say('That action could not be completed. The other iPad may have updated the game.')}catch(e){say('Could not save: '+e.message)}}
-function subscribe(c,s){code=c;seat=s;sessionStorage.setItem('afterdark-seat',String(s));if(unsub)unsub();unsub=onValue(gameRef(c),snap=>{let old=game,latest=snap.val();if(!latest){game=null;leave();say('This game is no longer available.');return}if(old&&(old.turn!==latest.turn||old.phase!==latest.phase)){pending={};chosenTile=null;resetFields();}game=normalizeGame(latest);try{render();if(old&&latest.bonusEvent?.id&&latest.bonusEvent.id!==old.bonusEvent?.id)showBonusEvent(latest.bonusEvent)}catch(e){console.error("Board render failed",e);say("Game display error: "+e.message)}},err=>say('Database connection: '+err.message));$('joinCode').value='';say('Connected to game '+c+' · digital board v3.6')}
+function subscribe(c,s){code=c;seat=s;sessionStorage.setItem('afterdark-seat',String(s));if(unsub)unsub();unsub=onValue(gameRef(c),snap=>{let old=game,latest=snap.val();if(!latest){game=null;leave();say('This game is no longer available.');return}if(old&&(old.turn!==latest.turn||old.phase!==latest.phase)){pending={};chosenTile=null;resetFields();}game=normalizeGame(latest);if(latest.challenge?.cardId)rememberCard(latest.challenge.cardId);try{render();if(old&&latest.bonusEvent?.id&&latest.bonusEvent.id!==old.bonusEvent?.id)showBonusEvent(latest.bonusEvent)}catch(e){console.error("Board render failed",e);say("Game display error: "+e.message)}},err=>say('Database connection: '+err.message));$('joinCode').value='';say('Connected to game '+c+' · Build 4.0')}
 function leave(){if(unsub){unsub();unsub=null}if(toastTimer)clearTimeout(toastTimer);$('bonusToast').classList.remove('visible');observedTimerKey=null;code=null;seat=-1;game=null;pending={};chosenTile=null;resetFields();render()}
 $('create').onclick=async()=>{if(!uid)return say('Connecting to Firebase…');try{for(let i=0;i<12;i++){let c=String(100000+Math.floor(Math.random()*900000)),g=initial();g.players={0:uid};const result=await runTransaction(gameRef(c),old=>old===null?g:undefined,{applyLocally:false});if(result.committed){subscribe(c,0);return}}say('Unable to allocate a game code. Try again.')}catch(e){say(e.message)}};
 $('join').onclick=async()=>{
@@ -272,7 +367,7 @@ $('submit').onclick=async()=>{let e=evaluate();if(e.error)return say(e.error);le
  g.moves=g.moves||[];g.moves.push({player:p,word:check.word,points:earned,afterDarkBonus:tier.points,afterDarkTier:tier.tier,previous:{tiles:clone(g.tiles),scores:[...g.scores],draws:clone(g.draws),racks:clone(g.racks),bag:[...g.bag],bonusEvent:g.bonusEvent||null,thinkMs:[...(g.thinkMs||[0,0])],turnStartedAt:g.turnStartedAt||null,lastTurnMs:g.lastTurnMs||0,turn:g.turn,phase:'play'}});
  if(tier.points)g.bonusEvent={id:`word-${g.moves.length}-${g.turn}`,kind:'word',awards:[{player:p,word:check.word,points:tier.points,tier:tier.tier}]};
  for(let t of e.tiles)g.tiles[k(t.r,t.c)]={letter:t.letter,blank:t.blank};g.racks[seat]=rack.filter((_,i)=>!e.tiles.some(t=>t.rackIndex===i));drawToSeven(g,seat);g.scores[p]+=earned;finishPlayingTime(g,p);
- let rd=Math.min(2,Math.floor(g.turn/8)),draws=g.draws[rd]||[],available=deck[rd].map((_,i)=>i).filter(i=>!draws.includes(i));if(!available.length){g.draws[rd]=[];available=deck[rd].map((_,i)=>i)}let pick=available[Math.floor(Math.random()*available.length)];g.draws[rd].push(pick);g.challenge={text:deck[rd][pick],player:p,responses:{},durationSeconds:TIMED_CHALLENGES.get(deck[rd][pick])||0};g.phase='challenge';return g});pending={};chosenTile=null};
+ let rd=Math.min(2,Math.floor(g.turn/8)),card=selectChallenge(rd+1,g.challengeHistory||[],recentSeen());if(!card)return;g.challengeHistory.push(card.id);g.challenge={...newChallenge(card),player:p};g.phase='challenge';return g});pending={};chosenTile=null};
 async function respondToChallenge(response){await mutate(g=>{
  if(g.status!=='playing'||g.phase!=='challenge'||!g.challenge||!['accepted','declined'].includes(response))return;
  if(choiceStatus(g.challenge)!=='pending')return;
@@ -281,9 +376,10 @@ async function respondToChallenge(response){await mutate(g=>{
  g.challenge.responses[seat]=response;return g;
  });}
 $('acceptChallenge').onclick=()=>{enableChime();return respondToChallenge('accepted')};
+$('flowSkip').onclick=()=>mutate(g=>{if(g.phase!=='challenge'||choiceStatus(g.challenge)!=='accepted'||g.challenge.skipped)return;g.challenge.skipped=true;g.challenge.timer={skipped:true};return g});
 $('declineChallenge').onclick=()=>respondToChallenge('declined');
 function advanceChallenge(){return mutate(g=>{
- if(g.status!=='playing'||g.phase!=='challenge'||(g.starting+g.turn)%2!==seat||choiceStatus(g.challenge)==='pending'||!timerSatisfied(g.challenge))return;
+ if(g.status!=='playing'||g.phase!=='challenge'||(g.starting+g.turn)%2!==seat||choiceStatus(g.challenge)==='pending'||!activityDone(g.challenge))return;
  g.turn++;g.phase=g.turn>=24?'finished':'play';g.challenge=null;beginNextTurn(g);return g;
 })}
 $('next').onclick=advanceChallenge;
@@ -291,7 +387,7 @@ $('timerAdvance').onclick=advanceChallenge;
 $('timerStart').onclick=()=>{
  enableChime();return mutate(g=>{
   const ch=g.challenge;
-  if(g.status!=='playing'||g.phase!=='challenge'||choiceStatus(ch)!=='accepted'||!challengeSeconds(ch)||ch.timer?.startedAt||ch.timer?.skipped)return;
+  if(g.status!=='playing'||g.phase!=='challenge'||choiceStatus(ch)!=='accepted'||!flowDone(ch)||ch.skipped||!challengeSeconds(ch)||ch.timer?.startedAt||ch.timer?.skipped)return;
   const now=serverNow(),duration=challengeSeconds(ch);
   ch.timer={startedAt:now,endsAt:now+duration*1000,durationSeconds:duration};return g;
  });
@@ -309,7 +405,34 @@ if(typeof document.addEventListener==='function')document.addEventListener('visi
 function undo(g){if((g.starting+g.turn)%2!==seat)return;let m=g.moves?.at(-1);if(!m||m.player!==seat)return;g.tiles=m.previous.tiles;g.scores=m.previous.scores;g.draws=m.previous.draws;if(m.previous.racks)g.racks=m.previous.racks;if(m.previous.bag)g.bag=m.previous.bag;g.turn=m.previous.turn;g.phase='play';g.challenge=null;g.bonusEvent=m.previous.bonusEvent||null;if(m.previous.thinkMs)g.thinkMs=m.previous.thinkMs;g.turnStartedAt=m.previous.turnStartedAt||null;g.lastTurnMs=m.previous.lastTurnMs||0;g.moves.pop();return g}
 $('undo').onclick=()=>mutate(g=>{if(g.phase!=='play')return;return undo(g)});$('undoChallenge').onclick=()=>mutate(g=>{if(g.phase!=='challenge'||Object.keys(g.challenge?.responses||{}).length)return;return undo(g)});
 $('skip').onclick=()=>mutate(g=>{if(g.phase!=='play'||(g.starting+g.turn)%2!==seat)return;g.moves=g.moves||[];g.moves.push({player:seat,word:null,points:0,previous:{tiles:clone(g.tiles),scores:[...g.scores],draws:clone(g.draws),racks:clone(g.racks),bag:[...g.bag],thinkMs:[...(g.thinkMs||[0,0])],turnStartedAt:g.turnStartedAt||null,lastTurnMs:g.lastTurnMs||0,turn:g.turn,phase:'play'}});finishPlayingTime(g,seat);g.turn++;g.phase=g.turn>=24?'finished':'play';beginNextTurn(g);return g});
-$('end').onclick=async()=>{if(!confirm('End this shared game for both players? This cannot be undone.'))return;await mutate(g=>{g.status='ended';return g})};
+function renderEndInvitation(){
+ const active=game?.status==='playing',proposal=game?.endRequest;
+ $('end').classList.toggle('hidden',!active||!!proposal);
+ $('endInvitation').classList.toggle('hidden',!active||!proposal);
+ if(!active||!proposal)return;
+ const r=proposal.responses||{},mine=r[seat];
+ $('endInvitationText').textContent=mine==='accepted'?'Invitation sent. Waiting for your partner…':`Player ${proposal.from+1} suggests ending Scrabble here. The board can wait.`;
+ $('acceptEnd').classList.toggle('hidden',!!mine);
+ $('keepPlaying').classList.toggle('hidden',!!mine);
+}
+$('end').onclick=()=>mutate(g=>{
+ if(g.status!=='playing'||g.endRequest)return;
+ g.endRequest={from:seat,responses:{[seat]:'accepted'}};return g;
+});
+$('acceptEnd').onclick=()=>mutate(g=>{
+ if(g.status!=='playing'||!g.endRequest||g.endRequest.responses?.[seat])return;
+ g.endRequest.responses=g.endRequest.responses||{};
+ g.endRequest.responses[seat]='accepted';
+ if(g.endRequest.responses[0]==='accepted'&&g.endRequest.responses[1]==='accepted'){
+  if(g.phase==='play')finishPlayingTime(g,(g.starting+g.turn)%2);
+  g.status='ended';g.endReason='mutual';g.turnStartedAt=null;
+ }
+ return g;
+});
+$('keepPlaying').onclick=()=>mutate(g=>{
+ if(g.status!=='playing'||!g.endRequest)return;
+ g.endRequest=null;return g;
+});
 $('revealBtn').onclick=async()=>{if(game?.phase!=='finished')return;try{let snap=await get(ref(db,`secrets/${code}/${seat}`)),w=snap.val()?.word;if(!w)return say('Your secret word could not be found.');await mutate(g=>{if(g.phase!=='finished'||g.reveals?.[seat])return;g.reveals=g.reveals||{};g.reveals[seat]=w;if(g.reveals[0]&&g.reveals[1]&&!g.secretAwarded){
  g.secretAwarded=true;g.secretMatches=[];const awards=[];
  for(let s=0;s<2;s++){
