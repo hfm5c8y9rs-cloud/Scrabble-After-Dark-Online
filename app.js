@@ -13,7 +13,10 @@ const V={A:1,B:3,C:3,D:2,E:1,F:4,G:2,H:4,I:1,J:8,K:5,L:1,M:3,N:1,O:1,P:3,Q:10,R:
 const TW=['0,0','0,7','0,14','7,0','7,14','14,0','14,7','14,14'],DW=['1,1','2,2','3,3','4,4','7,7','10,10','11,11','12,12','13,13','1,13','2,12','3,11','4,10','10,4','11,3','12,2','13,1'],TL=['1,5','1,9','5,1','5,5','5,9','5,13','9,1','9,5','9,9','9,13','13,5','13,9'],DL=['0,3','0,11','2,6','2,8','3,0','3,7','3,14','6,2','6,6','6,8','6,12','7,3','7,11','8,2','8,6','8,8','8,12','11,0','11,7','11,14','12,6','12,8','14,3','14,11'];
 const k=(r,c)=>r+','+c,prem=(r,c)=>{let q=k(r,c);return TW.includes(q)?'tw':DW.includes(q)?'dw':TL.includes(q)?'tl':DL.includes(q)?'dl':''},clone=x=>JSON.parse(JSON.stringify(x));
 const initial=()=>({status:'lobby',players:{},names:{},ready:{},secrets:{},scores:[0,0],tiles:{},turn:0,starting:Math.random()<.5?0:1,phase:'play',draws:[[],[],[]],bag:makeBag(),racks:{0:[],1:[]},moves:[],challenge:null,ended:false,turnStartedAt:null,thinkMs:[0,0],lastTurnMs:0,challengeHistory:[],endRequest:null,version:0});
-const player=()=>game?(game.starting+game.turn)%2:0,round=()=>Math.min(2,Math.floor((game?.turn||0)/8)),canAct=()=>game?.status==='playing'&&seat===player(),isOwner=()=>seat>=0&&game?.players?.[seat]===uid;
+// The warmth builds earlier: turns 1–4 / 5–10 / 11–24.
+// Rounds define challenge intensity, not separate Scrabble rules or extra turns.
+const roundIndex=turn=>turn<4?0:turn<10?1:2;
+const player=()=>game?(game.starting+game.turn)%2:0,round=()=>roundIndex(game?.turn||0),canAct=()=>game?.status==='playing'&&seat===player(),isOwner=()=>seat>=0&&game?.players?.[seat]===uid;
 // Both players must explicitly opt in; one decline skips the challenge.
 const choiceStatus=challenge=>{if(!challenge)return 'pending';const r=challenge.responses||{};if(r[0]==='declined'||r[1]==='declined')return 'declined';return r[0]==='accepted'&&r[1]==='accepted'?'accepted':'pending'};
 // Two-device challenge progression. Acceptance precedes any interactive prompts.
@@ -34,6 +37,16 @@ function activityDone(ch){return !ch||choiceStatus(ch)==='declined'||!!ch.skippe
 function recentSeen(){try{return JSON.parse(localStorage.getItem('afterdark-seen-40')||'[]')}catch{return []}}
 function rememberCard(id){if(!id)return;try{const seen=recentSeen().filter(x=>x!==id);seen.push(id);localStorage.setItem('afterdark-seen-40',JSON.stringify(seen.slice(-120)))}catch{}}
 const newChallenge=card=>({cardId:card.id,title:card.title,text:card.prompt,player:0,responses:{},durationSeconds:card.durationSeconds||0});
+// Four seconds to put both iPads down after the second acceptance. The shared
+// timestamp avoids either player having to walk back and tap Start Timer.
+const TIMER_PREP_MS=4000;
+function armSharedTimer(ch){
+ if(!ch||choiceStatus(ch)!=='accepted'||!flowDone(ch)||ch.skipped||ch.timer?.startedAt||ch.timer?.skipped)return false;
+ const seconds=challengeSeconds(ch);if(!seconds)return false;
+ const startedAt=serverNow()+TIMER_PREP_MS;
+ ch.timer={startedAt,endsAt:startedAt+seconds*1000,durationSeconds:seconds};
+ return true;
+}
 const safeInput=value=>String(value||'').trim().replace(/\s+/g,' ').slice(0,160);
 function mkButton(label,callback){const btn=document.createElement('button');btn.type='button';btn.textContent=label;btn.onclick=callback;return btn}
 function showFlowOptions(options,handler){
@@ -50,7 +63,7 @@ function showFlowInputs({label='Your answer',two=false,submit='Submit answer',on
 async function saveFlow(fn){return mutate(g=>{
  if(g.status!=='playing'||g.phase!=='challenge'||choiceStatus(g.challenge)!=='accepted'||g.challenge?.skipped)return;
  const card=challengeCard(g.challenge);if(!card)return;
- return fn(g.challenge,card)?g:undefined;
+ if(!fn(g.challenge,card))return undefined;armSharedTimer(g.challenge);return g;
 })}
 function renderChallengeFlow(){
  const ch=game?.challenge,card=challengeCard(ch),active=game?.status==='playing'&&game.phase==='challenge'&&choiceStatus(ch)==='accepted';
@@ -292,23 +305,25 @@ function syncTimerView(){
  if(!active){observedTimerKey=null;return}
  $('timerChallenge').textContent=ch.text;
  const timer=ch.timer||{},end=Number(timer.endsAt)||0;
- const started=!!end,remaining=started?Math.max(0,Math.ceil((end-serverNow())/1000)):seconds;
+ const started=!!end,prep=started&&serverNow()<Number(timer.startedAt||0);
+ const remaining=started&&!prep?Math.max(0,Math.ceil((end-serverNow())/1000)):seconds;
  const finished=started&&serverNow()>=end;
  const key=`${code}:${game.turn}:${end}`;
  if(started&&remaining>0)observedTimerKey=key;
  if(finished&&observedTimerKey===key&&chimedTimerKey!==key){chimedTimerKey=key;playTimerChime()}
  $('timerDisplay').textContent=`${Math.floor(remaining/60)}:${String(remaining%60).padStart(2,'0')}`;
- $('timerState').textContent=finished?'Time is up!':started?'Challenge underway':'Ready when you both are';
+ $('timerState').textContent=finished?'Time is up!':prep?`Starting in ${Math.ceil((timer.startedAt-serverNow())/1000)}… set the iPads down`:
+  started?'Challenge underway':'Ready when you both are';
  $('timerStart').classList.toggle('hidden',started);
  $('timerStart').disabled=started||!isOwner();
  $('timerSkip').classList.toggle('hidden',finished);
- $('timerAdvance').classList.toggle('hidden',!finished||seat!==player());
- $('timerWaiting').classList.toggle('hidden',!finished||seat===player());
- $('timerWaiting').textContent=`Finished — waiting for Player ${player()+1} to advance.`;
+ $('timerAdvance').classList.toggle('hidden',!finished);
+ $('timerWaiting').classList.add('hidden');
+ $('timerWaiting').textContent='Either player can advance when you are ready.';
  $('timerSound').textContent=soundEnabled?'Chime enabled on this iPad':'Tap “Enable Chime” to hear the finish sound on this iPad.';
  $('enableTimerSound').textContent=soundEnabled?'Chime Enabled':'Enable Chime';
  $('enableTimerSound').disabled=soundEnabled;
- $('next').disabled=seat!==player()||!timerSatisfied(ch);
+ $('next').disabled=!isOwner()||!activityDone(ch);
 }
 
 function preview(){if(!game)return;const e=swapping?{error:'Select letters from your rack, then confirm the exchange.'}:canAct()&&game.phase==='play'?evaluate():{error:'Waiting for your turn.'};$('validation').textContent=e.error||`${e.word} · ${e.tiles.length} new tiles`;$('submit').disabled=!!e.error;
@@ -318,7 +333,7 @@ function preview(){if(!game)return;const e=swapping?{error:'Select letters from 
 function render(){let active=!!game,playing=game?.status==='playing',myturn=canAct();$('welcome').classList.toggle('hidden',active);$('game').classList.toggle('hidden',!active);if(!active)return;
  $('gameCode').textContent=code;$('seatLabel').textContent=`Player ${seat+1}`;$('score0').innerHTML=`Player 1 <strong>${game.scores[0]}</strong>`;$('score1').innerHTML=`Player 2 <strong>${game.scores[1]}</strong>`;
  $('round').textContent='Round '+(round()+1)+' / 3';$('status').textContent=game.status==='lobby'?'Waiting for both secret words':game.status==='ended'?'Game ended':game.phase==='finished'?'Game complete':`Player ${player()+1} · turn ${game.turn+1} of 24`;
- $('lobby').classList.toggle('hidden',game.status!=='lobby');$('play').classList.toggle('hidden',!playing||game.phase!=='play');$('challenge').classList.toggle('hidden',!playing||game.phase!=='challenge');$('finished').classList.toggle('hidden',!playing||game.phase!=='finished');$('ended').classList.toggle('hidden',game.status!=='ended');if(game.status==='ended')$('endedDetails').textContent=['mutual','board-can-wait'].includes(game.endReason)?`The Board Can Wait. Player ${Number(game.endedBy??0)+1} ended the game. Final scores: ${game.scores[0]}–${game.scores[1]}.`:`Game ended. Final scores: ${game.scores[0]}–${game.scores[1]}.`;$('secretInputArea').classList.toggle('hidden',!!game.ready?.[seat]);$('lobbyInfo').textContent=`Your word: ${game.ready?.[seat]?'saved privately':'not submitted'} · Partner: ${game.ready?.[1-seat]?'ready':'waiting'}`;
+ $('lobby').classList.toggle('hidden',game.status!=='lobby');$('play').classList.toggle('hidden',!playing||game.phase!=='play');$('challenge').classList.toggle('hidden',!playing||game.phase!=='challenge');document.body.classList.toggle('challenge-focus',playing&&game.phase==='challenge');$('finished').classList.toggle('hidden',!playing||game.phase!=='finished');$('ended').classList.toggle('hidden',game.status!=='ended');if(game.status==='ended')$('endedDetails').textContent=['mutual','board-can-wait'].includes(game.endReason)?`The Board Can Wait. Player ${Number(game.endedBy??0)+1} ended the game. Final scores: ${game.scores[0]}–${game.scores[1]}.`:`Game ended. Final scores: ${game.scores[0]}–${game.scores[1]}.`;$('secretInputArea').classList.toggle('hidden',!!game.ready?.[seat]);$('lobbyInfo').textContent=`Your word: ${game.ready?.[seat]?'saved privately':'not submitted'} · Partner: ${game.ready?.[1-seat]?'ready':'waiting'}`;
  $('board').innerHTML='';$('board').style.display=playing?'grid':'none';if(playing){for(let r=0;r<15;r++)for(let c=0;c<15;c++){let b=document.createElement('button'),t=pending[k(r,c)]||game.tiles[k(r,c)],p=prem(r,c);b.className='sq '+(t?'placed':p)+(pending[k(r,c)]?' selected':'');b.textContent=t?t.letter:({tw:'TW',dw:'DW',tl:'TL',dl:'DL'}[p]||'');b.disabled=!myturn||swapping||game.phase!=='play';b.setAttribute('aria-label',`Row ${r+1}, column ${c+1}`);b.onclick=()=>chooseSquare(r,c);$('board').append(b)}}
  const bagSize=Array.isArray(game.bag)?game.bag.length:0;
  $('bagCount').textContent=`Tiles in bag: ${bagSize} · ${bagSize<MIN_EXCHANGE_BAG?'Exchanges unavailable (fewer than 7 left)':'Exchange 1–7 tiles instead of playing'}`;
@@ -334,9 +349,9 @@ function render(){let active=!!game,playing=game?.status==='playing',myturn=canA
  $('declineChallenge').disabled=!inChallenge||!isOwner()||decision!=='pending'||!!myChoice;
  $('challengeChoices').classList.toggle('hidden',!inChallenge||decision!=='pending'||!!myChoice);
  $('challengeResponses').textContent=inChallenge?`Your response: ${myChoice||'waiting'} · Partner: ${otherChoice||'waiting'}`:'';
- $('challengeGuidance').textContent=inChallenge?'Both players choose Accept or Decline, then follow the on-screen prompts.':'';
+ $('challengeGuidance').textContent=inChallenge?'Both iPads show this challenge. Set them down between steps; either player can advance afterward.':'';
  $('challengeDecision').textContent=!inChallenge?'':decision==='declined'?'Declined — challenge skipped. No penalty.':decision==='accepted'?(challengeSeconds(ch)?'Accepted by both — synchronized challenge timer is ready.':'Accepted — follow the challenge controls below.'):myChoice?'Waiting for your partner to respond.':'Choose Accept or Decline. Your partner sees the same challenge.';
- $('next').disabled=!inChallenge||!myturn||decision==='pending'||!activityDone(ch);
+ $('next').disabled=!inChallenge||!isOwner()||decision==='pending'||!activityDone(ch);
  $('undoChallenge').disabled=!inChallenge||!myturn||Object.keys(responses).length>0;
  for(const id of ['word','blanks','dir']){let el=$(id);if(el)el.closest('label,div')?.classList.add('hidden')}
  $('card').textContent=game.challenge?.text||'';$('challengeTitle').textContent=ch?.title?`After Dark · ${ch.title}`:`Player ${player()+1} challenge`;renderChallengeFlow();renderEndInvitation();$('spectator').classList.toggle('hidden',myturn||!playing);$('spectator').textContent=`Waiting for Player ${player()+1} to finish their turn. Board updates automatically.`;
@@ -344,8 +359,8 @@ function render(){let active=!!game,playing=game?.status==='playing',myturn=canA
  $('secretBonusDetails').textContent=(game.secretMatches||[]).length?`Secret match bonus: ${(game.secretMatches||[]).map(s=>`Player ${s+1} +50`).join(' · ')}`:'Secret match bonus: no matches this game.'}}
  syncTimerView();syncTurnClock();preview();}
 async function mutate(fn){if(!code||!isOwner())return false;try{const result=await runTransaction(gameRef(code),g=>{if(!g||g.status==='ended'||g.players?.[seat]!==uid)return;g=normalizeGame(g);const out=fn(g);if(out){out.version=(g.version||0)+1;return out}}, {applyLocally:false});if(!result.committed)say('That action could not be completed. The other iPad may have updated the game.');return !!result.committed}catch(e){say('Could not save: '+e.message);return false}}
-function subscribe(c,s){code=c;seat=s;sessionStorage.setItem('afterdark-seat',String(s));if(unsub)unsub();unsub=onValue(gameRef(c),snap=>{let old=game,latest=snap.val();if(!latest){game=null;leave();say('This game is no longer available.');return}if(old&&(old.turn!==latest.turn||old.phase!==latest.phase)){pending={};chosenTile=null;clearSwap();resetFields();}game=normalizeGame(latest);if(latest.challenge?.cardId)rememberCard(latest.challenge.cardId);try{render();if(old&&latest.bonusEvent?.id&&latest.bonusEvent.id!==old.bonusEvent?.id)showBonusEvent(latest.bonusEvent)}catch(e){console.error("Board render failed",e);say("Game display error: "+e.message)}},err=>say('Database connection: '+err.message));$('joinCode').value='';say('Connected to game '+c+' · Build 4.2')}
-function leave(){clearSwap();if(unsub){unsub();unsub=null}if(toastTimer)clearTimeout(toastTimer);$('bonusToast').classList.remove('visible');observedTimerKey=null;code=null;seat=-1;game=null;pending={};chosenTile=null;resetFields();render()}
+function subscribe(c,s){code=c;seat=s;sessionStorage.setItem('afterdark-seat',String(s));if(unsub)unsub();unsub=onValue(gameRef(c),snap=>{let old=game,latest=snap.val();if(!latest){game=null;leave();say('This game is no longer available.');return}if(old&&(old.turn!==latest.turn||old.phase!==latest.phase)){pending={};chosenTile=null;clearSwap();resetFields();}game=normalizeGame(latest);if(latest.challenge?.cardId)rememberCard(latest.challenge.cardId);try{render();if(old&&latest.bonusEvent?.id&&latest.bonusEvent.id!==old.bonusEvent?.id)showBonusEvent(latest.bonusEvent)}catch(e){console.error("Board render failed",e);say("Game display error: "+e.message)}},err=>say('Database connection: '+err.message));$('joinCode').value='';say('Connected to game '+c+' · Build 4.3')}
+function leave(){document.body.classList.remove('challenge-focus');clearSwap();if(unsub){unsub();unsub=null}if(toastTimer)clearTimeout(toastTimer);$('bonusToast').classList.remove('visible');observedTimerKey=null;code=null;seat=-1;game=null;pending={};chosenTile=null;resetFields();render()}
 $('create').onclick=async()=>{if(!uid)return say('Connecting to Firebase…');try{for(let i=0;i<12;i++){let c=String(100000+Math.floor(Math.random()*900000)),g=initial();g.players={0:uid};const result=await runTransaction(gameRef(c),old=>old===null?g:undefined,{applyLocally:false});if(result.committed){subscribe(c,0);return}}say('Unable to allocate a game code. Try again.')}catch(e){say(e.message)}};
 $('join').onclick=async()=>{
   const c=$('joinCode').value.trim();
@@ -383,19 +398,26 @@ $('submit').onclick=async()=>{let e=evaluate();if(e.error)return say(e.error);le
  g.moves=g.moves||[];g.moves.push({player:p,word:check.word,points:earned,afterDarkBonus:tier.points,afterDarkTier:tier.tier,previous:{tiles:clone(g.tiles),scores:[...g.scores],draws:clone(g.draws),racks:clone(g.racks),bag:[...g.bag],bonusEvent:g.bonusEvent||null,thinkMs:[...(g.thinkMs||[0,0])],turnStartedAt:g.turnStartedAt||null,lastTurnMs:g.lastTurnMs||0,turn:g.turn,phase:'play'}});
  if(tier.points)g.bonusEvent={id:`word-${g.moves.length}-${g.turn}`,kind:'word',awards:[{player:p,word:check.word,points:tier.points,tier:tier.tier}]};
  for(let t of e.tiles)g.tiles[k(t.r,t.c)]={letter:t.letter,blank:t.blank};g.racks[seat]=rack.filter((_,i)=>!e.tiles.some(t=>t.rackIndex===i));drawToSeven(g,seat);g.scores[p]+=earned;finishPlayingTime(g,p);
- let rd=Math.min(2,Math.floor(g.turn/8)),card=selectChallenge(rd+1,g.challengeHistory||[],recentSeen());if(!card)return;g.challengeHistory.push(card.id);g.challenge={...newChallenge(card),player:p};g.phase='challenge';return g});pending={};chosenTile=null};
+ const rd=roundIndex(g.turn);
+ // Ease into the evening: only every second successfully played word in Round 1
+ // triggers a challenge. Later rounds trigger a challenge after every played word.
+ const successful=g.moves.filter(m=>!!m.word).length;
+ if(rd===0&&successful%2!==0){g.turn++;g.phase=g.turn>=24?'finished':'play';beginNextTurn(g);return g}
+ const card=selectChallenge(rd+1,g.challengeHistory||[],recentSeen());
+ if(!card){g.turn++;g.phase=g.turn>=24?'finished':'play';beginNextTurn(g);return g}
+ g.challengeHistory.push(card.id);g.challenge={...newChallenge(card),player:p};g.phase='challenge';return g});pending={};chosenTile=null};
 async function respondToChallenge(response){await mutate(g=>{
  if(g.status!=='playing'||g.phase!=='challenge'||!g.challenge||!['accepted','declined'].includes(response))return;
  if(choiceStatus(g.challenge)!=='pending')return;
  g.challenge.responses=g.challenge.responses||{};
  if(g.challenge.responses[seat])return;
- g.challenge.responses[seat]=response;return g;
+ g.challenge.responses[seat]=response;if(choiceStatus(g.challenge)==='accepted')armSharedTimer(g.challenge);return g;
  });}
 $('acceptChallenge').onclick=()=>{enableChime();return respondToChallenge('accepted')};
 $('flowSkip').onclick=()=>mutate(g=>{if(g.phase!=='challenge'||choiceStatus(g.challenge)!=='accepted'||g.challenge.skipped)return;g.challenge.skipped=true;g.challenge.timer={skipped:true};return g});
 $('declineChallenge').onclick=()=>respondToChallenge('declined');
 function advanceChallenge(){return mutate(g=>{
- if(g.status!=='playing'||g.phase!=='challenge'||(g.starting+g.turn)%2!==seat||choiceStatus(g.challenge)==='pending'||!activityDone(g.challenge))return;
+ if(g.status!=='playing'||g.phase!=='challenge'||g.players?.[seat]!==uid||choiceStatus(g.challenge)==='pending'||!activityDone(g.challenge))return;
  g.turn++;g.phase=g.turn>=24?'finished':'play';g.challenge=null;beginNextTurn(g);return g;
 })}
 $('next').onclick=advanceChallenge;
@@ -413,6 +435,8 @@ $('timerSkip').onclick=()=>mutate(g=>{
  ch.timer={skipped:true,durationSeconds:challengeSeconds(ch)};return g;
 });
 $('enableTimerSound').onclick=()=>{enableChime();syncTimerView()};
+// The exit must remain available even when a timed challenge fills the screen.
+$('timerEnd').onclick=()=>$('end').click();
 // Use Firebase's clock offset so the countdown agrees across two devices.
 onValue(ref(db,'.info/serverTimeOffset'),snapshot=>{serverTimeOffset=Number(snapshot.val())||0},()=>{});
 setInterval(syncTimerView,250);
