@@ -102,7 +102,7 @@ function renderChallengeFlow(){
   }else $('flowStatus').textContent=card.selectAfterReveal?'Selected: '+entries[ch.selection]:'Both answers revealed. Continue whenever you are ready.';
   return;
  }
- if(card.id==='R3-39'){$('flowLead').textContent='Want to end Scrabble together?';showFlowOptions(['Invite your partner: The Board Can Wait'],()=>{$('end').click()});return}
+ if(card.id==='R3-39'){$('flowLead').textContent='Ready to call it a night?';showFlowOptions(['The Board Can Wait — End Game Now'],()=>{$('end').click()});return}
  $('flowStatus').textContent=card.durationSeconds?'Start the shared countdown below.':'Carry out the challenge, then continue.';
 }
 const resetFields=()=>{$('word').value='';$('blanks').value='';$('word').dataset.last='';selected=null;editing=false};
@@ -157,8 +157,8 @@ function evaluate(g=game){
  if(word.length<2)return {error:'Play a word of at least two letters.'};
  if(!Object.keys(g.tiles).length){if(!used.some(t=>t.r===7&&t.c===7))return {error:'First word must cover the center square.'}}else if(!connected)return {error:'Connect to an existing tile.'};
  if(word.length>15)return {error:'Word exceeds the board.'};
- if(!WORDS.has(word))return {error:`${word} is not in the game dictionary.`};
- for(const w of crosswords)if(!WORDS.has(w))return {error:`Crossword ${w} is not in the game dictionary.`};
+ if(!isPlayableWord(word))return {error:`${word} is not in the game dictionary.`};
+ for(const w of crosswords)if(!isPlayableWord(w))return {error:`Crossword ${w} is not in the game dictionary.`};
  return {word,crosswords,tiles:used,base:main*mult,cross,bingo:used.length===7?50:0,total:main*mult+cross+(used.length===7?50:0)};
 }
 function chooseSquare(r,c){if(!canAct()||swapping||game.phase!=='play'||game.tiles[k(r,c)])return;
@@ -173,9 +173,13 @@ function drawToSeven(g,s){g.bag=g.bag||[];g.racks=g.racks||{0:[],1:[]};g.racks[s
 // Main word only; normal Scrabble scores, crosswords and the secret-word match are separate.
 const ROMANTIC_WORDS=new Set(["LOVE", "KISS", "HUG", "HEART", "SWEET", "ROMANCE", "ADORE", "DARLING", "CUDDLE", "AFFECTION", "EMBRACE", "CHARM", "DEVOTION", "BELOVED", "LOVER", "LOVERS", "ROMANTIC", "LOVING", "DATE", "DATES", "WINK", "WINKS", "BLUSH", "BLUSHES"]);
 const SUGGESTIVE_WORDS=new Set(["SEXY", "LUST", "NAKED", "TEASE", "DESIRE", "PASSION", "SULTRY", "HOT", "FLIRT", "SEDUCE", "STEAMY", "SPICY", "NAUGHTY", "RISQUE", "FANTASY", "SENSUAL", "TEMPT", "TINGLE", "KINKY", "CRAVE", "CHEEKY", "INTIMATE", "KISSING", "WHISPER", "LINGERIE"]);
+// Adult house-rule words: eligible for play even if absent from the bundled dictionary.
+// Keep this list out of the visible bonus-word glossary; the awarded tier still appears on play.
+const AFTER_DARK_WORDS=new Set(["ADULT","ANAL","AREOLA","AREOLAS","ASS","ASSES","ASSHOLE","ASSHOLES","BALLS","BLOWJOB","BLOWJOBS","BONER","BONERS","BOOB","BOOBIE","BOOBIES","BOOBS","BOOTIES","BOOTY","BREAST","BREASTS","BUM","BUMS","BUTT","BUTTS","CLIMAX","CLIMAXES","CLIT","CLITORIS","CLITS","COCK","COCKS","CUM","CUMMING","DICK","DICKS","DILDO","DILDOS","EJACULATE","EJACULATION","ERECTION","ERECTIONS","EROTIC","EROTICA","FETISH","FETISHES","FOREPLAY","FUCK","FUCKED","FUCKER","FUCKERS","FUCKING","FUCKS","GROAN","GROANING","GROANS","HANDJOB","HANDJOBS","HORNY","INTERCOURSE","KINK","KINKS","LICK","LICKING","LICKS","LUBE","LUBRICANT","LUSTY","MASTURBATE","MASTURBATING","MASTURBATION","MOAN","MOANING","MOANS","NIPPLE","NIPPLES","NUDE","NUDES","NUDIST","NUDITY","ORAL","ORGASM","ORGASMS","PENIS","PENISES","PORN","PORNO","PUSSIES","PUSSY","RIM","RIMMING","SEDUCED","SEDUCTION","SEMEN","SEX","SEXES","SEXT","SEXTING","SEXTS","SHAG","SHAGGED","SHAGGING","SHAGS","SPANK","SPANKING","SPANKS","STRIP","STRIPPED","STRIPPER","STRIPPING","STRIPTEASE","SUCK","SUCKING","SUCKS","TESTICLE","TESTICLES","THRUST","THRUSTING","THRUSTS","TIT","TITS","TITTIES","TITTY","TOPLESS","VAGINA","VAGINAS","VIBRATOR","VIBRATORS","VULVA","VULVAS"]);
+const isPlayableWord=word=>WORDS.has(word)||AFTER_DARK_WORDS.has(word)||SUGGESTIVE_WORDS.has(word)||ROMANTIC_WORDS.has(word);
 function bonusForWord(w){
  const word=(w||'').trim().toUpperCase();
- return SUGGESTIVE_WORDS.has(word)?{points:10,tier:'Suggestive',word}:ROMANTIC_WORDS.has(word)?{points:5,tier:'Romantic',word}:{points:0,tier:null,word};
+ return AFTER_DARK_WORDS.has(word)?{points:15,tier:'After Dark',word}:SUGGESTIVE_WORDS.has(word)?{points:10,tier:'Suggestive',word}:ROMANTIC_WORDS.has(word)?{points:5,tier:'Romantic',word}:{points:0,tier:null,word};
 }
 function setupBonusWords(){
  $('romanticWords').textContent=[...ROMANTIC_WORDS].sort().join(' · ');
@@ -191,9 +195,9 @@ function showBonusEvent(event){
  $('bonusToastTier').textContent=label;
  $('bonusToastPoints').textContent=awards.map(a=>'+'+a.points).join(' & ');
  $('bonusToastDescription').textContent=awards.map(a=>`Player ${a.player+1} · ${a.word}`).join('  ·  ');
- node.classList.remove('visible','romantic','suggestive','secret');
+ node.classList.remove('visible','romantic','suggestive','after-dark','secret');
  void node.offsetWidth; // restart CSS animation for consecutive bonuses
- node.classList.add('visible',secret?'secret':awards[0].tier.toLowerCase());
+ node.classList.add('visible',secret?'secret':awards[0].tier.toLowerCase().replace(/\s+/g,'-'));
  if(toastTimer)clearTimeout(toastTimer);
  toastTimer=setTimeout(()=>node.classList.remove('visible'),3000);
 }
@@ -314,7 +318,7 @@ function preview(){if(!game)return;const e=swapping?{error:'Select letters from 
 function render(){let active=!!game,playing=game?.status==='playing',myturn=canAct();$('welcome').classList.toggle('hidden',active);$('game').classList.toggle('hidden',!active);if(!active)return;
  $('gameCode').textContent=code;$('seatLabel').textContent=`Player ${seat+1}`;$('score0').innerHTML=`Player 1 <strong>${game.scores[0]}</strong>`;$('score1').innerHTML=`Player 2 <strong>${game.scores[1]}</strong>`;
  $('round').textContent='Round '+(round()+1)+' / 3';$('status').textContent=game.status==='lobby'?'Waiting for both secret words':game.status==='ended'?'Game ended':game.phase==='finished'?'Game complete':`Player ${player()+1} · turn ${game.turn+1} of 24`;
- $('lobby').classList.toggle('hidden',game.status!=='lobby');$('play').classList.toggle('hidden',!playing||game.phase!=='play');$('challenge').classList.toggle('hidden',!playing||game.phase!=='challenge');$('finished').classList.toggle('hidden',!playing||game.phase!=='finished');$('ended').classList.toggle('hidden',game.status!=='ended');if(game.status==='ended')$('endedDetails').textContent=game.endReason==='mutual'?`The Board Can Wait. Final scores: ${game.scores[0]}–${game.scores[1]}.`:`Game ended. Final scores: ${game.scores[0]}–${game.scores[1]}.`;$('secretInputArea').classList.toggle('hidden',!!game.ready?.[seat]);$('lobbyInfo').textContent=`Your word: ${game.ready?.[seat]?'saved privately':'not submitted'} · Partner: ${game.ready?.[1-seat]?'ready':'waiting'}`;
+ $('lobby').classList.toggle('hidden',game.status!=='lobby');$('play').classList.toggle('hidden',!playing||game.phase!=='play');$('challenge').classList.toggle('hidden',!playing||game.phase!=='challenge');$('finished').classList.toggle('hidden',!playing||game.phase!=='finished');$('ended').classList.toggle('hidden',game.status!=='ended');if(game.status==='ended')$('endedDetails').textContent=['mutual','board-can-wait'].includes(game.endReason)?`The Board Can Wait. Player ${Number(game.endedBy??0)+1} ended the game. Final scores: ${game.scores[0]}–${game.scores[1]}.`:`Game ended. Final scores: ${game.scores[0]}–${game.scores[1]}.`;$('secretInputArea').classList.toggle('hidden',!!game.ready?.[seat]);$('lobbyInfo').textContent=`Your word: ${game.ready?.[seat]?'saved privately':'not submitted'} · Partner: ${game.ready?.[1-seat]?'ready':'waiting'}`;
  $('board').innerHTML='';$('board').style.display=playing?'grid':'none';if(playing){for(let r=0;r<15;r++)for(let c=0;c<15;c++){let b=document.createElement('button'),t=pending[k(r,c)]||game.tiles[k(r,c)],p=prem(r,c);b.className='sq '+(t?'placed':p)+(pending[k(r,c)]?' selected':'');b.textContent=t?t.letter:({tw:'TW',dw:'DW',tl:'TL',dl:'DL'}[p]||'');b.disabled=!myturn||swapping||game.phase!=='play';b.setAttribute('aria-label',`Row ${r+1}, column ${c+1}`);b.onclick=()=>chooseSquare(r,c);$('board').append(b)}}
  const bagSize=Array.isArray(game.bag)?game.bag.length:0;
  $('bagCount').textContent=`Tiles in bag: ${bagSize} · ${bagSize<MIN_EXCHANGE_BAG?'Exchanges unavailable (fewer than 7 left)':'Exchange 1–7 tiles instead of playing'}`;
@@ -340,7 +344,7 @@ function render(){let active=!!game,playing=game?.status==='playing',myturn=canA
  $('secretBonusDetails').textContent=(game.secretMatches||[]).length?`Secret match bonus: ${(game.secretMatches||[]).map(s=>`Player ${s+1} +50`).join(' · ')}`:'Secret match bonus: no matches this game.'}}
  syncTimerView();syncTurnClock();preview();}
 async function mutate(fn){if(!code||!isOwner())return false;try{const result=await runTransaction(gameRef(code),g=>{if(!g||g.status==='ended'||g.players?.[seat]!==uid)return;g=normalizeGame(g);const out=fn(g);if(out){out.version=(g.version||0)+1;return out}}, {applyLocally:false});if(!result.committed)say('That action could not be completed. The other iPad may have updated the game.');return !!result.committed}catch(e){say('Could not save: '+e.message);return false}}
-function subscribe(c,s){code=c;seat=s;sessionStorage.setItem('afterdark-seat',String(s));if(unsub)unsub();unsub=onValue(gameRef(c),snap=>{let old=game,latest=snap.val();if(!latest){game=null;leave();say('This game is no longer available.');return}if(old&&(old.turn!==latest.turn||old.phase!==latest.phase)){pending={};chosenTile=null;clearSwap();resetFields();}game=normalizeGame(latest);if(latest.challenge?.cardId)rememberCard(latest.challenge.cardId);try{render();if(old&&latest.bonusEvent?.id&&latest.bonusEvent.id!==old.bonusEvent?.id)showBonusEvent(latest.bonusEvent)}catch(e){console.error("Board render failed",e);say("Game display error: "+e.message)}},err=>say('Database connection: '+err.message));$('joinCode').value='';say('Connected to game '+c+' · Build 4.1')}
+function subscribe(c,s){code=c;seat=s;sessionStorage.setItem('afterdark-seat',String(s));if(unsub)unsub();unsub=onValue(gameRef(c),snap=>{let old=game,latest=snap.val();if(!latest){game=null;leave();say('This game is no longer available.');return}if(old&&(old.turn!==latest.turn||old.phase!==latest.phase)){pending={};chosenTile=null;clearSwap();resetFields();}game=normalizeGame(latest);if(latest.challenge?.cardId)rememberCard(latest.challenge.cardId);try{render();if(old&&latest.bonusEvent?.id&&latest.bonusEvent.id!==old.bonusEvent?.id)showBonusEvent(latest.bonusEvent)}catch(e){console.error("Board render failed",e);say("Game display error: "+e.message)}},err=>say('Database connection: '+err.message));$('joinCode').value='';say('Connected to game '+c+' · Build 4.2')}
 function leave(){clearSwap();if(unsub){unsub();unsub=null}if(toastTimer)clearTimeout(toastTimer);$('bonusToast').classList.remove('visible');observedTimerKey=null;code=null;seat=-1;game=null;pending={};chosenTile=null;resetFields();render()}
 $('create').onclick=async()=>{if(!uid)return say('Connecting to Firebase…');try{for(let i=0;i<12;i++){let c=String(100000+Math.floor(Math.random()*900000)),g=initial();g.players={0:uid};const result=await runTransaction(gameRef(c),old=>old===null?g:undefined,{applyLocally:false});if(result.committed){subscribe(c,0);return}}say('Unable to allocate a game code. Try again.')}catch(e){say(e.message)}};
 $('join').onclick=async()=>{
@@ -444,33 +448,18 @@ $('confirmSwap').onclick=async()=>{
  if(success){clearSwap();pending={};chosenTile=null;render();say(`Exchanged ${picks.length} tile${picks.length===1?'':'s'}. No points — next player's turn.`)}
 };
 $('skip').onclick=()=>mutate(g=>{if(g.phase!=='play'||(g.starting+g.turn)%2!==seat)return;g.moves=g.moves||[];g.moves.push({player:seat,word:null,points:0,previous:{tiles:clone(g.tiles),scores:[...g.scores],draws:clone(g.draws),racks:clone(g.racks),bag:[...g.bag],thinkMs:[...(g.thinkMs||[0,0])],turnStartedAt:g.turnStartedAt||null,lastTurnMs:g.lastTurnMs||0,turn:g.turn,phase:'play'}});finishPlayingTime(g,seat);g.turn++;g.phase=g.turn>=24?'finished':'play';beginNextTurn(g);return g});
+// A single player can end the shared game immediately, even mid-challenge.
+// This is an end-game action, not a new challenge requiring two-player approval.
 function renderEndInvitation(){
- const active=game?.status==='playing',proposal=game?.endRequest;
- $('end').classList.toggle('hidden',!active||!!proposal);
- $('endInvitation').classList.toggle('hidden',!active||!proposal);
- if(!active||!proposal)return;
- const r=proposal.responses||{},mine=r[seat];
- $('endInvitationText').textContent=mine==='accepted'?'Invitation sent. Waiting for your partner…':`Player ${proposal.from+1} suggests ending Scrabble here. The board can wait.`;
- $('acceptEnd').classList.toggle('hidden',!!mine);
- $('keepPlaying').classList.toggle('hidden',!!mine);
+ $('end').classList.toggle('hidden',game?.status!=='playing');
 }
 $('end').onclick=()=>mutate(g=>{
- if(g.status!=='playing'||g.endRequest)return;
- g.endRequest={from:seat,responses:{[seat]:'accepted'}};return g;
-});
-$('acceptEnd').onclick=()=>mutate(g=>{
- if(g.status!=='playing'||!g.endRequest||g.endRequest.responses?.[seat])return;
- g.endRequest.responses=g.endRequest.responses||{};
- g.endRequest.responses[seat]='accepted';
- if(g.endRequest.responses[0]==='accepted'&&g.endRequest.responses[1]==='accepted'){
-  if(g.phase==='play')finishPlayingTime(g,(g.starting+g.turn)%2);
-  g.status='ended';g.endReason='mutual';g.turnStartedAt=null;
- }
+ if(g.status!=='playing')return;
+ if(g.phase==='play')finishPlayingTime(g,(g.starting+g.turn)%2);
+ g.status='ended';g.ended=true;g.endReason='board-can-wait';
+ g.endedBy=seat;g.endedAt=serverNow();g.endRequest=null;
+ g.turnStartedAt=null;
  return g;
-});
-$('keepPlaying').onclick=()=>mutate(g=>{
- if(g.status!=='playing'||!g.endRequest)return;
- g.endRequest=null;return g;
 });
 $('revealBtn').onclick=async()=>{if(game?.phase!=='finished')return;try{let snap=await get(ref(db,`secrets/${code}/${seat}`)),w=snap.val()?.word;if(!w)return say('Your secret word could not be found.');await mutate(g=>{if(g.phase!=='finished'||g.reveals?.[seat])return;g.reveals=g.reveals||{};g.reveals[seat]=w;if(g.reveals[0]&&g.reveals[1]&&!g.secretAwarded){
  g.secretAwarded=true;g.secretMatches=[];const awards=[];
