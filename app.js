@@ -5,6 +5,9 @@ import {getAuth,signInAnonymously,onAuthStateChanged} from 'https://www.gstatic.
 import {getDatabase,ref,get,set,onValue,runTransaction,remove} from 'https://www.gstatic.com/firebasejs/11.10.0/firebase-database.js';
 const config={apiKey:'AIzaSyDq3iRwJGlHjx-PMmNo_Aq0KKi5ULQnHv0',authDomain:'scrabble-after-dark.firebaseapp.com',databaseURL:'https://scrabble-after-dark-default-rtdb.firebaseio.com',projectId:'scrabble-after-dark',storageBucket:'scrabble-after-dark.firebasestorage.app',messagingSenderId:'503923310198',appId:'1:503923310198:web:f9de0ea2bf6a6d8220a957'};
 const fb=initializeApp(config),auth=getAuth(fb),db=getDatabase(fb);let uid=null,code=null,seat=-1,game=null,unsub=null,selected=null,editing=false;
+// The exchange selection stays local until a single Firebase transaction commits it.
+let swapping=false,swapIndices=new Set();
+const clearSwap=()=>{swapping=false;swapIndices.clear()};
 const $=id=>document.getElementById(id),say=(s)=>{$('message').textContent=s},gameRef=c=>ref(db,'games/'+c),seatName=s=>s===0?'You':'Wendy';
 const V={A:1,B:3,C:3,D:2,E:1,F:4,G:2,H:4,I:1,J:8,K:5,L:1,M:3,N:1,O:1,P:3,Q:10,R:1,S:1,T:1,U:1,V:4,W:4,X:8,Y:4,Z:10};
 const TW=['0,0','0,7','0,14','7,0','7,14','14,0','14,7','14,14'],DW=['1,1','2,2','3,3','4,4','7,7','10,10','11,11','12,12','13,13','1,13','2,12','3,11','4,10','10,4','11,3','12,2','13,1'],TL=['1,5','1,9','5,1','5,5','5,9','5,13','9,1','9,5','9,9','9,13','13,5','13,9'],DL=['0,3','0,11','2,6','2,8','3,0','3,7','3,14','6,2','6,6','6,8','6,12','7,3','7,11','8,2','8,6','8,8','8,12','11,0','11,7','11,14','12,6','12,8','14,3','14,11'];
@@ -104,7 +107,10 @@ function renderChallengeFlow(){
 }
 const resetFields=()=>{$('word').value='';$('blanks').value='';$('word').dataset.last='';selected=null;editing=false};
 const DISTRIBUTION={A:9,B:2,C:2,D:4,E:12,F:2,G:3,H:2,I:9,J:1,K:1,L:4,M:2,N:6,O:8,P:2,Q:1,R:6,S:4,T:6,U:4,V:2,W:2,X:1,Y:2,Z:1,'?':2};
-const makeBag=()=>Object.entries(DISTRIBUTION).flatMap(([l,n])=>Array(n).fill(l)).sort(()=>Math.random()-.5);
+// Fisher-Yates avoids the uneven tile mixing caused by sort(() => Math.random() - .5).
+function shuffleBag(tiles){for(let i=tiles.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[tiles[i],tiles[j]]=[tiles[j],tiles[i]]}return tiles}
+const makeBag=()=>shuffleBag(Object.entries(DISTRIBUTION).flatMap(([l,n])=>Array(n).fill(l)));
+const MIN_EXCHANGE_BAG=7;
 // Board styling is installed by app.js so an older index.html cannot hide the grid.
 const boardStyle=document.createElement('style');
 boardStyle.textContent=`#board{display:grid!important;grid-template-columns:repeat(15,minmax(0,1fr))!important;width:100%!important;max-width:690px;margin:12px auto;gap:2px;aspect-ratio:1/1;visibility:visible!important}#board .sq{display:flex!important;align-items:center;justify-content:center;min-width:0!important;min-height:0!important;padding:0!important;border:1px solid #8d6773;border-radius:2px;font-size:clamp(8px,1.6vw,15px);font-weight:700;color:#38252c;background:#e3d4c8;aspect-ratio:1/1}#board .sq.tw{background:#d8788c}#board .sq.dw{background:#eab2bf}#board .sq.tl{background:#81a6ce}#board .sq.dl{background:#bfd1e9}#board .sq.placed{background:#f0d2a4;color:#38251a}#board .sq.selected{outline:3px solid #f2ba5e;outline-offset:-2px}#board .sq:disabled{opacity:1!important}#tileRack{width:100%;max-width:690px;margin:12px auto!important}#play{min-width:0}`;
@@ -155,7 +161,7 @@ function evaluate(g=game){
  for(const w of crosswords)if(!WORDS.has(w))return {error:`Crossword ${w} is not in the game dictionary.`};
  return {word,crosswords,tiles:used,base:main*mult,cross,bingo:used.length===7?50:0,total:main*mult+cross+(used.length===7?50:0)};
 }
-function chooseSquare(r,c){if(!canAct()||game.phase!=='play'||game.tiles[k(r,c)])return;
+function chooseSquare(r,c){if(!canAct()||swapping||game.phase!=='play'||game.tiles[k(r,c)])return;
  const pos=k(r,c);if(pending[pos]){delete pending[pos];render();return}
  if(chosenTile===null){say('Select a tile in your rack first.');return}
  const rack=rackFor(seat),letter=rack[chosenTile];if(!letter||Object.values(pending).some(t=>t.rackIndex===chosenTile))return;
@@ -301,7 +307,7 @@ function syncTimerView(){
  $('next').disabled=seat!==player()||!timerSatisfied(ch);
 }
 
-function preview(){if(!game)return;const e=canAct()&&game.phase==='play'?evaluate():{error:'Waiting for your turn.'};$('validation').textContent=e.error||`${e.word} · ${e.tiles.length} new tiles`;$('submit').disabled=!!e.error;
+function preview(){if(!game)return;const e=swapping?{error:'Select letters from your rack, then confirm the exchange.'}:canAct()&&game.phase==='play'?evaluate():{error:'Waiting for your turn.'};$('validation').textContent=e.error||`${e.word} · ${e.tiles.length} new tiles`;$('submit').disabled=!!e.error;
  if(e.error){$('summary').textContent='';$('bonusPreview').textContent='';return}
  let bonus=bonusForWord(e.word);$('summary').textContent=`Word: ${e.base} · Crosses: ${e.cross} · Bingo: ${e.bingo} · After Dark: ${bonus.points ? bonus.tier+' +'+bonus.points : 'None'} · Total: ${e.total+bonus.points}`;$('bonusPreview').textContent=bonus.points?`${bonus.tier.toUpperCase()} BONUS · ${e.word} earns +${bonus.points} points when played!`:'';
 }
@@ -309,9 +315,15 @@ function render(){let active=!!game,playing=game?.status==='playing',myturn=canA
  $('gameCode').textContent=code;$('seatLabel').textContent=`Player ${seat+1}`;$('score0').innerHTML=`Player 1 <strong>${game.scores[0]}</strong>`;$('score1').innerHTML=`Player 2 <strong>${game.scores[1]}</strong>`;
  $('round').textContent='Round '+(round()+1)+' / 3';$('status').textContent=game.status==='lobby'?'Waiting for both secret words':game.status==='ended'?'Game ended':game.phase==='finished'?'Game complete':`Player ${player()+1} · turn ${game.turn+1} of 24`;
  $('lobby').classList.toggle('hidden',game.status!=='lobby');$('play').classList.toggle('hidden',!playing||game.phase!=='play');$('challenge').classList.toggle('hidden',!playing||game.phase!=='challenge');$('finished').classList.toggle('hidden',!playing||game.phase!=='finished');$('ended').classList.toggle('hidden',game.status!=='ended');if(game.status==='ended')$('endedDetails').textContent=game.endReason==='mutual'?`The Board Can Wait. Final scores: ${game.scores[0]}–${game.scores[1]}.`:`Game ended. Final scores: ${game.scores[0]}–${game.scores[1]}.`;$('secretInputArea').classList.toggle('hidden',!!game.ready?.[seat]);$('lobbyInfo').textContent=`Your word: ${game.ready?.[seat]?'saved privately':'not submitted'} · Partner: ${game.ready?.[1-seat]?'ready':'waiting'}`;
- $('board').innerHTML='';$('board').style.display=playing?'grid':'none';if(playing){for(let r=0;r<15;r++)for(let c=0;c<15;c++){let b=document.createElement('button'),t=pending[k(r,c)]||game.tiles[k(r,c)],p=prem(r,c);b.className='sq '+(t?'placed':p)+(pending[k(r,c)]?' selected':'');b.textContent=t?t.letter:({tw:'TW',dw:'DW',tl:'TL',dl:'DL'}[p]||'');b.disabled=!myturn||game.phase!=='play';b.setAttribute('aria-label',`Row ${r+1}, column ${c+1}`);b.onclick=()=>chooseSquare(r,c);$('board').append(b)}}
- let rack=$('tileRack');if(!rack){rack=document.createElement('div');rack.id='tileRack';rack.style.cssText='display:flex;gap:5px;justify-content:center;flex-wrap:wrap;margin:14px 0';$('board').insertAdjacentElement('afterend',rack)}rack.innerHTML='';if(playing&&game.phase==='play'){rackFor(seat).forEach((letter,i)=>{let b=document.createElement('button');b.textContent=letter==='?'?'BLANK':`${letter} ${V[letter]||0}`;b.disabled=!myturn||Object.values(pending).some(t=>t.rackIndex===i);b.style.cssText=`min-width:40px;min-height:48px;border:2px solid ${chosenTile===i?'#e6ac64':'#9c7383'};border-radius:7px;background:#e8d2a2;color:#302315;font-weight:bold`;b.onclick=()=>{chosenTile=i;render()};rack.append(b)})}
- for(const id of ['submit','skip','undo'])$(id).disabled=!myturn||game.phase!=='play';
+ $('board').innerHTML='';$('board').style.display=playing?'grid':'none';if(playing){for(let r=0;r<15;r++)for(let c=0;c<15;c++){let b=document.createElement('button'),t=pending[k(r,c)]||game.tiles[k(r,c)],p=prem(r,c);b.className='sq '+(t?'placed':p)+(pending[k(r,c)]?' selected':'');b.textContent=t?t.letter:({tw:'TW',dw:'DW',tl:'TL',dl:'DL'}[p]||'');b.disabled=!myturn||swapping||game.phase!=='play';b.setAttribute('aria-label',`Row ${r+1}, column ${c+1}`);b.onclick=()=>chooseSquare(r,c);$('board').append(b)}}
+ const bagSize=Array.isArray(game.bag)?game.bag.length:0;
+ $('bagCount').textContent=`Tiles in bag: ${bagSize} · ${bagSize<MIN_EXCHANGE_BAG?'Exchanges unavailable (fewer than 7 left)':'Exchange 1–7 tiles instead of playing'}`;
+ $('swap').disabled=!myturn||swapping||game.phase!=='play'||bagSize<MIN_EXCHANGE_BAG;
+ $('swapPanel').classList.toggle('hidden',!swapping||!myturn||game.phase!=='play');
+ $('swapStatus').textContent=`${swapIndices.size} tile${swapIndices.size===1?'':'s'} selected · This uses your turn, scores 0 points, and does not trigger a challenge.`;
+ $('confirmSwap').disabled=!myturn||!swapping||swapIndices.size===0||bagSize<MIN_EXCHANGE_BAG;
+ let rack=$('tileRack');if(!rack){rack=document.createElement('div');rack.id='tileRack';rack.style.cssText='display:flex;gap:5px;justify-content:center;flex-wrap:wrap;margin:14px 0';$('board').insertAdjacentElement('afterend',rack)}rack.innerHTML='';if(playing&&game.phase==='play'){rackFor(seat).forEach((letter,i)=>{let b=document.createElement('button'),isMarked=swapIndices.has(i);b.textContent=letter==='?'?'BLANK':`${letter} ${V[letter]||0}`;b.disabled=!myturn||(!swapping&&Object.values(pending).some(t=>t.rackIndex===i));b.className=swapping?(isMarked?'swap-marked':'swap-available'):'';b.setAttribute('aria-pressed',swapping?String(isMarked):'false');b.setAttribute('aria-label',swapping?`${isMarked?'Remove':'Select'} ${letter==='?'?'blank':letter} for exchange`:`Letter ${letter}`);b.style.cssText=`min-width:40px;min-height:48px;border:2px solid ${swapping?(isMarked?'#f6e2ac':'#9c7383'):(chosenTile===i?'#e6ac64':'#9c7383')};border-radius:7px;background:${swapping&&isMarked?'#79334f':'#e8d2a2'};color:${swapping&&isMarked?'#fff1da':'#302315'};font-weight:bold;box-shadow:${swapping&&isMarked?'0 0 0 2px #eebf76':'none'}`;b.onclick=()=>{if(swapping){swapIndices.has(i)?swapIndices.delete(i):swapIndices.add(i)}else chosenTile=i;render()};rack.append(b)})}
+ for(const id of ['submit','skip','undo'])$(id).disabled=!myturn||swapping||game.phase!=='play';
  const ch=game.challenge,decision=choiceStatus(ch),responses=ch?.responses||{},inChallenge=playing&&game.phase==='challenge';
  const myChoice=responses[seat],otherChoice=responses[1-seat];
  $('acceptChallenge').disabled=!inChallenge||!isOwner()||decision!=='pending'||!!myChoice;
@@ -327,9 +339,9 @@ function render(){let active=!!game,playing=game?.status==='playing',myturn=canA
  if(game.phase==='finished'){$('winner').textContent=game.scores[0]===game.scores[1]?'It’s a tie!':(game.scores[0]>game.scores[1]?'Player 1 wins!':'Player 2 wins!')+` Final score ${game.scores[0]}–${game.scores[1]}.`;$('revealStatus').textContent=game.reveals?.[0]&&game.reveals?.[1]?'Both secret words revealed.':'Both players must reveal their secret words.';$('revealBtn').disabled=!!game.reveals?.[seat];if(game.reveals?.[0]&&game.reveals?.[1]){$('reveals').textContent=`Secret words: ${game.reveals[0]} / ${game.reveals[1]}`;
  $('secretBonusDetails').textContent=(game.secretMatches||[]).length?`Secret match bonus: ${(game.secretMatches||[]).map(s=>`Player ${s+1} +50`).join(' · ')}`:'Secret match bonus: no matches this game.'}}
  syncTimerView();syncTurnClock();preview();}
-async function mutate(fn){if(!code||!isOwner())return;try{const result=await runTransaction(gameRef(code),g=>{if(!g||g.status==='ended'||g.players?.[seat]!==uid)return;g=normalizeGame(g);const out=fn(g);if(out){out.version=(g.version||0)+1;return out}}, {applyLocally:false});if(!result.committed)say('That action could not be completed. The other iPad may have updated the game.')}catch(e){say('Could not save: '+e.message)}}
-function subscribe(c,s){code=c;seat=s;sessionStorage.setItem('afterdark-seat',String(s));if(unsub)unsub();unsub=onValue(gameRef(c),snap=>{let old=game,latest=snap.val();if(!latest){game=null;leave();say('This game is no longer available.');return}if(old&&(old.turn!==latest.turn||old.phase!==latest.phase)){pending={};chosenTile=null;resetFields();}game=normalizeGame(latest);if(latest.challenge?.cardId)rememberCard(latest.challenge.cardId);try{render();if(old&&latest.bonusEvent?.id&&latest.bonusEvent.id!==old.bonusEvent?.id)showBonusEvent(latest.bonusEvent)}catch(e){console.error("Board render failed",e);say("Game display error: "+e.message)}},err=>say('Database connection: '+err.message));$('joinCode').value='';say('Connected to game '+c+' · Build 4.0')}
-function leave(){if(unsub){unsub();unsub=null}if(toastTimer)clearTimeout(toastTimer);$('bonusToast').classList.remove('visible');observedTimerKey=null;code=null;seat=-1;game=null;pending={};chosenTile=null;resetFields();render()}
+async function mutate(fn){if(!code||!isOwner())return false;try{const result=await runTransaction(gameRef(code),g=>{if(!g||g.status==='ended'||g.players?.[seat]!==uid)return;g=normalizeGame(g);const out=fn(g);if(out){out.version=(g.version||0)+1;return out}}, {applyLocally:false});if(!result.committed)say('That action could not be completed. The other iPad may have updated the game.');return !!result.committed}catch(e){say('Could not save: '+e.message);return false}}
+function subscribe(c,s){code=c;seat=s;sessionStorage.setItem('afterdark-seat',String(s));if(unsub)unsub();unsub=onValue(gameRef(c),snap=>{let old=game,latest=snap.val();if(!latest){game=null;leave();say('This game is no longer available.');return}if(old&&(old.turn!==latest.turn||old.phase!==latest.phase)){pending={};chosenTile=null;clearSwap();resetFields();}game=normalizeGame(latest);if(latest.challenge?.cardId)rememberCard(latest.challenge.cardId);try{render();if(old&&latest.bonusEvent?.id&&latest.bonusEvent.id!==old.bonusEvent?.id)showBonusEvent(latest.bonusEvent)}catch(e){console.error("Board render failed",e);say("Game display error: "+e.message)}},err=>say('Database connection: '+err.message));$('joinCode').value='';say('Connected to game '+c+' · Build 4.1')}
+function leave(){clearSwap();if(unsub){unsub();unsub=null}if(toastTimer)clearTimeout(toastTimer);$('bonusToast').classList.remove('visible');observedTimerKey=null;code=null;seat=-1;game=null;pending={};chosenTile=null;resetFields();render()}
 $('create').onclick=async()=>{if(!uid)return say('Connecting to Firebase…');try{for(let i=0;i<12;i++){let c=String(100000+Math.floor(Math.random()*900000)),g=initial();g.players={0:uid};const result=await runTransaction(gameRef(c),old=>old===null?g:undefined,{applyLocally:false});if(result.committed){subscribe(c,0);return}}say('Unable to allocate a game code. Try again.')}catch(e){say(e.message)}};
 $('join').onclick=async()=>{
   const c=$('joinCode').value.trim();
@@ -404,6 +416,33 @@ setInterval(syncTurnClock,1000);
 if(typeof document.addEventListener==='function')document.addEventListener('visibilitychange',syncTimerView);
 function undo(g){if((g.starting+g.turn)%2!==seat)return;let m=g.moves?.at(-1);if(!m||m.player!==seat)return;g.tiles=m.previous.tiles;g.scores=m.previous.scores;g.draws=m.previous.draws;if(m.previous.racks)g.racks=m.previous.racks;if(m.previous.bag)g.bag=m.previous.bag;g.turn=m.previous.turn;g.phase='play';g.challenge=null;g.bonusEvent=m.previous.bonusEvent||null;if(m.previous.thinkMs)g.thinkMs=m.previous.thinkMs;g.turnStartedAt=m.previous.turnStartedAt||null;g.lastTurnMs=m.previous.lastTurnMs||0;g.moves.pop();return g}
 $('undo').onclick=()=>mutate(g=>{if(g.phase!=='play')return;return undo(g)});$('undoChallenge').onclick=()=>mutate(g=>{if(g.phase!=='challenge'||Object.keys(g.challenge?.responses||{}).length)return;return undo(g)});
+// Swap any subset of the seven rack tiles. Draw replacements BEFORE returning old tiles.
+// Official rules: at least seven tiles must already remain in the bag; the swap uses the turn.
+$('swap').onclick=()=>{
+ if(!canAct()||game.phase!=='play')return;
+ if((game.bag||[]).length<MIN_EXCHANGE_BAG)return say('Scrabble rules require at least seven tiles in the bag to exchange.');
+ pending={};chosenTile=null;swapping=true;swapIndices.clear();render();
+};
+$('cancelSwap').onclick=()=>{clearSwap();render()};
+$('confirmSwap').onclick=async()=>{
+ if(!swapping||!canAct()||game.phase!=='play')return;
+ const picks=[...swapIndices].sort((a,b)=>a-b),before=clone(game),original=before.racks?.[seat]||[];
+ if(!picks.length||picks.some(i=>!Number.isInteger(i)||i<0||i>=original.length))return say('Choose at least one tile to exchange.');
+ if((before.bag||[]).length<MIN_EXCHANGE_BAG)return say('At least seven tiles must remain in the bag.');
+ const success=await mutate(g=>{
+  if(g.status!=='playing'||g.phase!=='play'||(g.starting+g.turn)%2!==seat||g.version!==before.version)return;
+  const bag=g.bag||[],rack=g.racks?.[seat]||[];
+  if(bag.length<MIN_EXCHANGE_BAG||bag.length<picks.length||rack.length!==original.length||picks.some(i=>rack[i]!==original[i]))return;
+  const discarded=picks.map(i=>rack[i]);
+  const replacements=picks.map(()=>bag.pop());
+  const updated=[...rack];picks.forEach((i,n)=>updated[i]=replacements[n]);
+  g.racks[seat]=updated;bag.push(...discarded);shuffleBag(bag);
+  g.moves=g.moves||[];g.moves.push({player:seat,word:null,kind:'exchange',tileCount:picks.length,points:0,turn:g.turn});
+  finishPlayingTime(g,seat);g.turn++;g.phase=g.turn>=24?'finished':'play';beginNextTurn(g);
+  return g;
+ });
+ if(success){clearSwap();pending={};chosenTile=null;render();say(`Exchanged ${picks.length} tile${picks.length===1?'':'s'}. No points — next player's turn.`)}
+};
 $('skip').onclick=()=>mutate(g=>{if(g.phase!=='play'||(g.starting+g.turn)%2!==seat)return;g.moves=g.moves||[];g.moves.push({player:seat,word:null,points:0,previous:{tiles:clone(g.tiles),scores:[...g.scores],draws:clone(g.draws),racks:clone(g.racks),bag:[...g.bag],thinkMs:[...(g.thinkMs||[0,0])],turnStartedAt:g.turnStartedAt||null,lastTurnMs:g.lastTurnMs||0,turn:g.turn,phase:'play'}});finishPlayingTime(g,seat);g.turn++;g.phase=g.turn>=24?'finished':'play';beginNextTurn(g);return g});
 function renderEndInvitation(){
  const active=game?.status==='playing',proposal=game?.endRequest;
